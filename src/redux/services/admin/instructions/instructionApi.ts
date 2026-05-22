@@ -115,7 +115,7 @@ export const instructionApi = baseApi.injectEndpoints({
         const queryParams = new URLSearchParams();
         if (params?.role && params.role !== "all")
           queryParams.append("role", params.role);
-        if (params?.search) queryParams.append("search", params.search);
+        if (params?.search) queryParams.append("role", params.search);
 
         return {
           url: `/admin/instructions/?${queryParams.toString()}`,

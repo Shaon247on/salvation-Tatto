@@ -20,7 +20,6 @@ interface RefreshIntervalOption {
 }
 
 const REFRESH_INTERVALS: RefreshIntervalOption[] = [
-  { value: 1, label: "Every 1 minutes" },
   { value: 3, label: "Every 3 minutes" },
   { value: 5, label: "Every 5 minutes" },
   { value: 10, label: "Every 10 minutes" },
@@ -67,15 +66,16 @@ const QRGenerator = () => {
   // Set initial time when QR is generated
   useEffect(() => {
     if (generatedQr) {
-      setTimeLeft(generatedQr.refresh_interval);
+      setTimeLeft(generatedQr.refresh_interval * 60);
     }
   }, [generatedQr]);
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
 
   const handleGenerateQr = async () => {
     setError(null);
@@ -92,7 +92,7 @@ const QRGenerator = () => {
       }).unwrap();
 
       setGeneratedQr(result.qr_session);
-      setTimeLeft(result.qr_session.refresh_interval);
+      setTimeLeft(result.qr_session.refresh_interval * 60);
     } catch (err: any) {
       setError(err?.data?.message || "Failed to generate QR code");
       setGeneratedQr(null);
