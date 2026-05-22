@@ -10,6 +10,45 @@ export interface TaskUser {
   location_name?: string;
 }
 
+interface TaskUserDetails {
+  id: number;
+  first_name: string;
+  last_name: string;
+  username: string;
+  email: string;
+  role: string;
+  role_display: string;
+  location_name?: string; // optional — not present on all users (e.g. created_by)
+}
+
+export interface TaskDetails {
+  id: number;
+  title: string;
+  description: string;
+  location: number;
+  location_name: string;
+  assigned_to: TaskUserDetails;
+  created_by: TaskUser;
+  due_date: string;
+  status: "pending" | "completed" | "approved" | "rejected" | "overdue" | "awaiting_review";
+  status_display: string;
+  is_recurring: boolean;
+  frequency: "none" | "today" | "weekly" | "monthly" | "yearly";
+  requires_photo: boolean;
+  photo_url: string | null;
+  completed_by: TaskUser | null;
+  completed_at: string | null;
+  approved_by: TaskUser | null;
+  approved_at: string | null;
+  rejected_by: TaskUser | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  is_fired: boolean;
+  can_fire: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Task {
   id: number;
   title: string;
@@ -119,7 +158,7 @@ export const taskApi = baseApi.injectEndpoints({
     }),
 
     // GET: Single task details
-    getTaskDetails: builder.query<Task, number>({
+    getTaskDetails: builder.query<TaskDetails, number>({
       query: (id) => `/admin/tasks/${id}/`,
       providesTags: (result, error, id) => [{ type: "Tasks", id }],
     }),

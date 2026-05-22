@@ -101,9 +101,10 @@ export default function TaskManagementSystem() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+
   const itemsPerPage = 10;
 
-  // --- API Queries ---
+  // --- API Queries --- 
   const {
     data: tasksData,
     isLoading,
@@ -577,7 +578,7 @@ function TaskDetailsModalWithApprove({
       <TaskDetailsModal
         isOpen={isOpen}
         onClose={onClose}
-        data={data}
+        id={selectedTask.id}
         onApprove={
           selectedTask && data?.status === "Awaiting Review"
             ? () => onApprove(selectedTask.id)
