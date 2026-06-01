@@ -23,6 +23,9 @@ import {
   NormalisedProfile,
 } from "@/types/ManagerProfile.type";
 
+import { useAppDispatch } from "@/redux/store";
+import { updateUser } from "@/redux/features/auth/authSlice";
+
 // District manager
 import { useUpdateDistrictManagerProfileMutation } from "@/redux/services/districtManager/districtManagerProfileApi";
 // Branch manager
@@ -81,6 +84,7 @@ export const ProfileInfo = ({
   isUpdatingPhoto,
   onRefresh,
 }: Props) => {
+  const dispatch = useAppDispatch();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -151,6 +155,7 @@ export const ProfileInfo = ({
       } else {
         await updateBM(fd).unwrap();
       }
+      dispatch(updateUser({ username: trimmed }));
       setSuccess("Profile updated successfully!");
       setIsEditing(false);
       onRefresh();
