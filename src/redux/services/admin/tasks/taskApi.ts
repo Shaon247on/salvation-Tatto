@@ -121,14 +121,14 @@ interface TaskQueryParams {
   status?: string;
 }
 
-interface TaskRequest {
+export interface TaskRequest {
   title: string;
   description: string;
   location: number;
   assigned_to: number;
   due_date: string;
   is_recurring: boolean;
-  frequency?: "today" | "weekly" | "monthly" | "yearly" | "none";
+  frequency?: "daily" | "weekly" | "monthly" | "yearly" | "none";
   requires_photo?: boolean;
 }
 

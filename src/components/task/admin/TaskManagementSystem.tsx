@@ -24,6 +24,7 @@ import FireUserModal from "./FireUserModal";
 import RejectModal from "./RejectModal";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 import {
+  TaskRequest,
   useApproveTaskMutation,
   useCreateTaskMutation,
   useDeleteTaskMutation,
@@ -92,7 +93,7 @@ export default function TaskManagementSystem() {
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [locationFilter, setLocationFilter] = useState("All Locations");
   const [locationFilterId, setLocationFilterId] = useState<number | null>(null);
-  const [frequencyFilter, setFrequencyFilter] = useState("All");
+  const [frequencyFilter, setFrequencyFilter] = useState("none");
 
   // Modal Control States
   const [isActionOpen, setIsActionOpen] = useState(false);
@@ -101,10 +102,9 @@ export default function TaskManagementSystem() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-
   const itemsPerPage = 10;
 
-  // --- API Queries --- 
+  // --- API Queries ---
   const {
     data: tasksData,
     isLoading,
@@ -245,15 +245,18 @@ export default function TaskManagementSystem() {
       assigned_to: formData.assignToId,
       due_date: formData.dueDate,
       is_recurring: formData.isRecurring,
-      frequency: formData.frequency,
       requires_photo: formData.requirePhoto,
+
+      ...(formData.isRecurring && {
+        frequency: formData.frequency,
+      }),
     };
 
     try {
       if (selectedTask) {
         await editTask({ id: selectedTask.id, data: payload }).unwrap();
       } else {
-        await createTask(payload as any).unwrap();
+        await createTask(payload as TaskRequest).unwrap();
       }
       refetch();
       setIsActionOpen(false);
@@ -340,7 +343,7 @@ export default function TaskManagementSystem() {
           <FilterDropdown
             value={frequencyFilter}
             onChange={handleFrequencyChange}
-            options={["All", "today", "weekly", "monthly", "yearly"]}
+            options={["All", "daily", "weekly", "monthly", "yearly"]}
           />
           <FilterDropdown
             value={locationFilter}
