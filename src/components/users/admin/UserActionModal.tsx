@@ -13,11 +13,47 @@ import { useAppSelector } from "@/redux/store";
 import { selectCurrentToken } from "@/redux/features/auth/authSlice";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 
+type ApiScheduleItem = {
+  id?: number;
+  day: string;
+  is_active: boolean;
+  start_time: string | null;
+  end_time: string | null;
+};
+
+type UserData = {
+  apiData?: {
+    email?: string;
+    role?: string;
+    location?: number;
+    user_status?: string;
+    work_schedules?: ApiScheduleItem[];
+  };
+  name?: string;
+  role?: string;
+  location?: string;
+};
+
+type ScheduleRow = {
+  day: string;
+  enabled: boolean;
+  start: string;
+  end: string;
+};
+
 interface UserActionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialData?: any | null;
-  onSave: (data: any) => void;
+  initialData?: UserData | null;
+  onSave: (data: {
+    fullName: string;
+    email: string;
+    password: string;
+    role: string;
+    location: string | number;
+    status: string;
+    schedule: ScheduleRow[];
+  }) => Promise<Record<string, string> | undefined>;
   isLoading?: boolean;
 }
 
@@ -74,10 +110,54 @@ export const UserActionModal = ({
   const isEditMode = !!initialData;
 
   const activeLocations =
-    locationsResponse?.locations?.filter((loc) => loc.status === "active") ||
-    [];
+    (locationsResponse?.locations || []) as Array<{
+      id: number;
+      name: string;
+      status: string;
+    }>;
 
-  const [formData, setFormData] = useState({
+  const timeStringToMinutes = (t?: string | null) => {
+    if (!t) return 0;
+    const ampm = t.match(/(AM|PM)/i);
+    if (ampm) {
+      const m = t.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+      if (!m) return 0;
+      let hour = Number(m[1]);
+      const minute = m[2] ? Number(m[2]) : 0;
+      const period = m[3].toUpperCase();
+      if (period === "PM" && hour !== 12) hour += 12;
+      if (period === "AM" && hour === 12) hour = 0;
+      return hour * 60 + minute;
+    }
+    const parts = t.split(":").map(Number);
+    if (parts.length >= 2) return parts[0] * 60 + parts[1];
+    const num = Number(t);
+    return isNaN(num) ? 0 : num * 60;
+  };
+
+  const to12HourDisplay = (val?: string | null) => {
+    if (!val) return "9 AM";
+    // strip seconds if present
+    const parts = val.split(":");
+    const hour = Number(parts[0]);
+    const minute = parts[1] ? Number(parts[1]) : 0;
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    return minute ? `${displayHour}:${String(minute).padStart(2, "0")} ${period}` : `${displayHour} ${period}`;
+  };
+
+  const getInitialSchedule = (apiSchedules: ApiScheduleItem[] = []) =>
+    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => {
+      const found = apiSchedules.find((s) => s.day === day.toLowerCase());
+      return {
+        day,
+        enabled: found ? found.is_active : true,
+        start: found ? to12HourDisplay(found.start_time) : "9 AM",
+        end: found ? to12HourDisplay(found.end_time) : "8 PM",
+      };
+    });
+
+  const getInitialFormData = () => ({
     fullName: initialData?.name || "",
     email: initialData?.apiData?.email || "",
     password: "",
@@ -86,31 +166,22 @@ export const UserActionModal = ({
     status: initialData?.apiData?.user_status || "active",
   });
 
-  const [schedule, setSchedule] = useState(() => {
-    const apiSchedules = initialData?.apiData?.work_schedules || [];
-    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => {
-      const found = apiSchedules.find((s: any) => s.day === day.toLowerCase());
-      return {
-        day,
-        enabled: found ? found.is_active : true,
-        start: found ? found.start_time : "09:00",
-        end: found ? found.end_time : "20:00",
-      };
-    });
-  });
+  const [formData, setFormData] = useState(getInitialFormData);
+  const [schedule, setSchedule] = useState<ScheduleRow[]>(() =>
+    getInitialSchedule(initialData?.apiData?.work_schedules),
+  );
 
   const [activePicker, setActivePicker] = useState<{
     index: number;
     field: "start" | "end";
   } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [scheduleErrors, setScheduleErrors] = useState<Record<number, string>>({});
 
   if (!isOpen) return null;
 
   const showSchedule =
     formData.role !== "" &&
-    formData.role !== "district_manager" &&
-    formData.role !== "branch_manager" &&
     formData.role !== "clock_in_user" &&
     (typeof formData.location === "number" || formData.location !== "");
 
@@ -118,6 +189,19 @@ export const UserActionModal = ({
     const newSchedule = [...schedule];
     newSchedule[index].enabled = !newSchedule[index].enabled;
     setSchedule(newSchedule);
+    // clear or validate error for this row
+    setScheduleErrors((err) => {
+      const next = { ...err };
+      if (!newSchedule[index].enabled) {
+        delete next[index];
+      } else {
+        const sMin = timeStringToMinutes(newSchedule[index].start);
+        const eMin = timeStringToMinutes(newSchedule[index].end);
+        if (sMin >= eMin) next[index] = "Start time must be before end time";
+        else delete next[index];
+      }
+      return next;
+    });
   };
 
   const handleTimeChange = (
@@ -129,6 +213,21 @@ export const UserActionModal = ({
     newSchedule[index][field] = newVal;
     setSchedule(newSchedule);
     setActivePicker(null);
+
+    // validate this row immediately
+    const start = field === "start" ? newVal : newSchedule[index].start;
+    const end = field === "end" ? newVal : newSchedule[index].end;
+    const startMin = timeStringToMinutes(start);
+    const endMin = timeStringToMinutes(end);
+    setScheduleErrors((err) => {
+      const next = { ...err };
+      if (newSchedule[index].enabled && startMin >= endMin) {
+        next[index] = "Start time must be before end time";
+      } else {
+        delete next[index];
+      }
+      return next;
+    });
   };
 
   const validateForm = () => {
@@ -143,13 +242,34 @@ export const UserActionModal = ({
       newErrors.password = "Password is required";
     if (!formData.role) newErrors.role = "Role is required";
     if (!formData.location) newErrors.location = "Location is required";
+    // schedule validation
+    const schedErrors: Record<number, string> = {};
+    schedule.forEach((row, idx) => {
+      if (!row.enabled) return;
+      const sMin = timeStringToMinutes(row.start);
+      const eMin = timeStringToMinutes(row.end);
+      if (sMin >= eMin) schedErrors[idx] = "Start time must be before end time";
+    });
+
+    setScheduleErrors(schedErrors);
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return Object.keys(newErrors).length === 0 && Object.keys(schedErrors).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
-    onSave({ ...formData, schedule });
+    const serverErrors = await onSave({ ...formData, schedule });
+    if (serverErrors && typeof serverErrors === "object") {
+      // map API field errors to local form fields
+      const nextErrors: Record<string, string> = {};
+      if (serverErrors.email) nextErrors.email = serverErrors.email;
+      // backend might return username error when email is duplicate
+      if (serverErrors.username && !nextErrors.email)
+        nextErrors.email = serverErrors.username;
+      if (serverErrors.non_field_errors)
+        nextErrors.general = serverErrors.non_field_errors;
+      setErrors((e) => ({ ...e, ...nextErrors }));
+    }
   };
 
   return (
@@ -174,6 +294,11 @@ export const UserActionModal = ({
         </div>
 
         <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+          {errors.general && (
+            <div className="p-3 rounded-md bg-red-900/40 text-red-200 text-sm">
+              {errors.general}
+            </div>
+          )}
           {/* Status Toggle - Super Admin Only Logic */}
           {isEditMode && (
             <div className="space-y-1.5">
@@ -218,6 +343,9 @@ export const UserActionModal = ({
                 )}
                 placeholder="Jordan Smith"
               />
+              {errors.fullName && (
+                <p className="text-red-400 text-xs mt-1">{errors.fullName}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -236,6 +364,9 @@ export const UserActionModal = ({
                 )}
                 placeholder="jsmith@example.com"
               />
+              {errors.email && (
+                <p className="text-red-400 text-xs mt-1">{errors.email}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -255,6 +386,9 @@ export const UserActionModal = ({
                   )}
                   placeholder="••••••••"
                 />
+                {errors.password && (
+                  <p className="text-red-400 text-xs mt-1">{errors.password}</p>
+                )}
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-600 w-4 h-4" />
               </div>
             </div>
@@ -282,6 +416,9 @@ export const UserActionModal = ({
                       </option>
                     ))}
                   </select>
+                  {errors.role && (
+                    <p className="text-red-400 text-xs mt-1">{errors.role}</p>
+                  )}
                   <ChevronDown
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
                     size={16}
@@ -308,12 +445,15 @@ export const UserActionModal = ({
                     )}
                   >
                     <option value="">Select Location</option>
-                    {activeLocations.map((l: any) => (
+                    {activeLocations.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name}
                       </option>
                     ))}
                   </select>
+                  {errors.location && (
+                    <p className="text-red-400 text-xs mt-1">{errors.location}</p>
+                  )}
                   <ChevronDown
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
                     size={16}
@@ -337,9 +477,9 @@ export const UserActionModal = ({
                   <div
                     key={item.day}
                     className={cn(
-                      "flex items-center justify-between p-3.5 border rounded-[20px] transition-all",
+                      "flex justify-between gap-2 p-3.5 border rounded-[20px] transition-all",
                       item.enabled
-                        ? "bg-black border-[#968B79]/60" // Matches active border from image
+                        ? "bg-black border-[#968B79]/60"
                         : "bg-[#0A0A0A] border-[#1A1A1A] opacity-50",
                     )}
                   >
@@ -377,7 +517,7 @@ export const UserActionModal = ({
                           onClick={() =>
                             setActivePicker({ index, field: "start" })
                           }
-                          className="bg-[#0D0D0D] border border-[#262626] px-4 py-2.5 rounded-[14px] text-xs font-medium text-white flex items-center gap-2 min-w-25 hover:border-[#404040] transition-colors"
+                          className="bg-[#0D0D0D] border border-[#262626] px-4 py-2.5 rounded-[14px] text-[0.6rem] md:text-xs font-medium text-white flex items-center gap-2 min-w-20 md:min-w-25 hover:border-[#404040] transition-colors"
                         >
                           <Clock size={14} className="text-gray-500" />
                           {item.start}
@@ -399,7 +539,7 @@ export const UserActionModal = ({
                           onClick={() =>
                             setActivePicker({ index, field: "end" })
                           }
-                          className="bg-[#0D0D0D] border border-[#262626] px-4 py-2.5 rounded-[14px] text-xs font-medium text-white flex items-center gap-2 min-w-25 hover:border-[#404040] transition-colors"
+                          className="bg-[#0D0D0D] border border-[#262626] px-4 py-2.5 rounded-[14px] text-[0.6rem] md:text-xs font-medium text-white flex items-center gap-2 min-w-20 md:min-w-25 hover:border-[#404040] transition-colors"
                         >
                           <Clock size={14} className="text-gray-500" />
                           {item.end}
@@ -415,6 +555,12 @@ export const UserActionModal = ({
                           )}
                       </div>
                     </div>
+
+                    {scheduleErrors[index] && (
+                      <div className="text-red-400 text-xs mt-2">
+                        {scheduleErrors[index]}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -431,8 +577,8 @@ export const UserActionModal = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={isLoading}
-            className="flex-1 py-3.5 bg-white text-black rounded-2xl font-bold hover:bg-gray-200 transition-colors"
+            disabled={isLoading || Object.keys(scheduleErrors).length > 0}
+            className="flex-1 py-3.5 bg-white text-black rounded-2xl font-bold hover:bg-gray-200 transition-colors disabled:opacity-50"
           >
             {isLoading
               ? "Processing..."

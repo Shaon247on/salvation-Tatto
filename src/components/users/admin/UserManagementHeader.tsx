@@ -25,31 +25,6 @@ export const UserManagementHeader = ({
   },
 }: UserManagementHeaderProps) => (
   <div className="space-y-8">
-    {/* <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div className="relative">
-        <Search
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600"
-          size={18}
-        />
-        <input
-          type="text"
-          placeholder="Search users..."
-          value={searchQuery}
-          onChange={(e) => onSearchChange?.(e.target.value)}
-          className="w-full bg-[#0D0D0D] border border-[#262626] rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-[#404040] transition-colors"
-        />
-
-       
-       
-      </div>
-      <button
-        onClick={onOpenModal}
-        className="flex items-center gap-2 bg-white text-black px-6 py-3 rounded-2xl font-bold hover:bg-gray-200 transition-all"
-      >
-        <Plus size={18} /> Create User
-      </button>
-    </div> */}
-
     <div className="grid grid-cols-1 md:grid-cols-14 md:items-center gap-4 w-full">
       {/* Search Bar - Spans 12 columns */}
       <div className="relative md:col-span-12">

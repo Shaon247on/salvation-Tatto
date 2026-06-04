@@ -97,6 +97,8 @@ export default function UsersAdmin() {
     { skip: !token },
   );
 
+  console.log("the user data:",apiResponse)
+
   React.useEffect(() => {
     if (token && !isLoading) refetch();
   }, [token, refetch, isLoading]);
@@ -131,10 +133,6 @@ export default function UsersAdmin() {
   const handleSave = useCallback(
     async (formData: any) => {
       try {
-        const isManagementRole =
-          formData.role === "district_manager" ||
-          formData.role === "branch_manager";
-
         // 1. Build the base payload with common fields
         const payload: any = {
           first_name: formData.fullName.split(" ")[0],
@@ -145,8 +143,8 @@ export default function UsersAdmin() {
           status: formData.status,
         };
 
-        // 2. ONLY add work_schedules if it's NOT a management role
-        if (!isManagementRole) {
+        // 2. Add work_schedules for all roles except clock_in_user
+        if (formData.role !== "clock_in_user") {
           payload.work_schedules = transformScheduleToAPI(formData.schedule);
         }
 
@@ -168,8 +166,21 @@ export default function UsersAdmin() {
         }
 
         setIsModalOpen(false);
-      } catch (err) {
-        console.error("Save failed:", err);
+      } catch (err: any) {
+        // Avoid noisy raw object logging that can trigger Next.js overlays in dev.
+        const data = err?.data || err?.response?.data || (typeof err === "string" ? err : undefined) || err;
+        if (data) console.warn("Save failed:", data);
+        else console.warn("Save failed");
+        if (data && typeof data === "object") {
+          const fieldErrors: Record<string, string> = {};
+          Object.keys(data).forEach((k) => {
+            const v = (data as any)[k];
+            if (Array.isArray(v) && v.length) fieldErrors[k] = String(v[0]);
+            else if (typeof v === "string") fieldErrors[k] = v;
+          });
+          return fieldErrors;
+        }
+        return { non_field_errors: "An unexpected error occurred" };
       }
     },
     [selectedUser, addUser, updateUser],
@@ -220,14 +231,16 @@ export default function UsersAdmin() {
         </div>
       </div>
 
-      <UserActionModal
-        key={selectedUser?.id || "new-user"}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        initialData={selectedUser}
-        onSave={handleSave}
-        isLoading={isAddingUser || isUpdatingUser}
-      />
+      {isModalOpen && (
+        <UserActionModal
+          key={selectedUser?.id || "new-user"}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          initialData={selectedUser}
+          onSave={handleSave}
+          isLoading={isAddingUser || isUpdatingUser}
+        />
+      )}
     </div>
   );
 }
