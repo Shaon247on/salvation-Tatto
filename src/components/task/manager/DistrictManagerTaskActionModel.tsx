@@ -50,7 +50,7 @@ export const DistrictManagerTaskActionModel = ({
     assignToId: 0,
     dueDate: "",
     isRecurring: false,
-    frequency: "today",
+    frequency: "daily",
     requirePhoto: false,
   });
 
@@ -66,7 +66,7 @@ export const DistrictManagerTaskActionModel = ({
         assignToId: initialData?.assigned_to || 0,
         dueDate: initialData?.due_date || "",
         isRecurring: initialData?.is_recurring || false,
-        frequency: initialData?.frequency || "today",
+        frequency: initialData?.frequency || "daily",
         requirePhoto: initialData?.requires_photo || false,
       });
     }
@@ -310,7 +310,7 @@ export const DistrictManagerTaskActionModel = ({
             {/* Frequency Selection */}
             {formData.isRecurring && (
               <div className="grid grid-cols-3 gap-2 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                {["today", "weekly", "monthly"].map((freq) => (
+                {["daily", "weekly", "monthly"].map((freq) => (
                   <button
                     key={freq}
                     type="button"

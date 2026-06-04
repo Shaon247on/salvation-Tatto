@@ -60,7 +60,7 @@ const [createTask, { isLoading: isCreating }] = useCreateTaskByDistrictManagerMu
       assigned_to: formData.assignToId,
       due_date: formData.dueDate,
       is_recurring: formData.isRecurring,
-      frequency: formData.isRecurring ? formData.frequency : "today",
+      frequency: formData.isRecurring ? formData.frequency : "daily",
       requires_photo: formData.requirePhoto,
     };
 

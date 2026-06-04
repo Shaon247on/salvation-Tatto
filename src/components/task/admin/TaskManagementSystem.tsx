@@ -62,7 +62,7 @@ export interface Task {
   assigned_to_role: string;
   location_name: string;
   location: number;
-  frequency: "none" | "daily" | "weekly" | "monthly" | "yearly" | "today";
+  frequency: "none" | "daily" | "weekly" | "monthly" | "yearly" | "daily";
   assigned_to_email: string;
   is_recurring: boolean;
   photo_url?: string | null;

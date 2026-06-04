@@ -68,6 +68,7 @@ export const theBranchManagerTaskApi = baseApi.injectEndpoints({
       invalidatesTags: ["BranchManagerTasks"],
     }),
   }),
+  overrideExisting: true
 });
 
 export const {

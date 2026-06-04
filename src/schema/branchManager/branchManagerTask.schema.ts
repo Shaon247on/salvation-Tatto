@@ -11,7 +11,7 @@ export const taskSchema = z.object({
   status: z.string(),
   submitted_at: z.string(),
   is_recurring: z.boolean(),
-  frequency: z.enum(["daily", "weekly", "monthly"]),
+  frequency: z.enum(["daily", "weekly", "monthly", "none"]),
   requires_photo: z.boolean(),
   can_edit: z.boolean(),
 });
