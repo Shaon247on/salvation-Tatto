@@ -10,6 +10,7 @@ import { useAppSelector } from "@/redux/store";
 import { selectCurrentToken } from "@/redux/features/auth/authSlice";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 import { useGetEmployeesForDropdownQuery } from "@/redux/services/admin/tasks/taskApi";
+import { EmployeeMultiSelect } from "./EmployeeMultiSelect";
 
 interface TaskActionModalProps {
   isOpen: boolean;
@@ -45,8 +46,7 @@ export const TaskActionModal = ({
     description: "",
     location: "",
     locationId: 0,
-    assignTo: "",
-    assignToId: 0,
+    assignedToIds: [] as number[],
     dueDate: "",
     isRecurring: false,
     frequency: "daily",
@@ -61,8 +61,7 @@ export const TaskActionModal = ({
         description: initialData?.description || "",
         location: initialData?.location || "",
         locationId: initialData?.locationId || 0,
-        assignTo: initialData?.assignedTo || "",
-        assignToId: initialData?.assignedToId || 0,
+        assignedToIds: initialData?.assignedToIds || [],
         dueDate: initialData?.dueDate || "",
         isRecurring: initialData?.isRecurring || false,
         frequency: initialData?.frequency || "daily",
@@ -90,8 +89,8 @@ export const TaskActionModal = ({
       alert("Location is required");
       return;
     }
-    if (!formData.assignToId) {
-      alert("Assign to is required");
+    if (formData.assignedToIds.length === 0) {
+      alert("At least one employee must be assigned");
       return;
     }
     if (!formData.dueDate) {
@@ -183,8 +182,7 @@ export const TaskActionModal = ({
                     ...formData,
                     location: selectedName,
                     locationId: selectedLoc?.id || 0,
-                    assignTo: "",
-                    assignToId: 0,
+                    assignedToIds: [],
                   });
                 }}
                 disabled={isLoading}
@@ -204,66 +202,41 @@ export const TaskActionModal = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* Due Date */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
-                Due Date *
-              </label>
-              <input
-                type="date"
-                value={formData.dueDate}
-                onChange={(e) =>
-                  setFormData({ ...formData, dueDate: e.target.value })
-                }
-                disabled={isLoading}
-                className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white outline-none focus:border-[#404040] scheme-dark disabled:opacity-50"
-              />
-            </div>
+          {/* Due Date */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
+              Due Date *
+            </label>
+            <input
+              type="date"
+              value={formData.dueDate}
+              onChange={(e) =>
+                setFormData({ ...formData, dueDate: e.target.value })
+              }
+              disabled={isLoading}
+              className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white outline-none focus:border-[#404040] scheme-dark disabled:opacity-50"
+            />
+          </div>
 
-            {/* Assign To */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
-                Assign To *
-              </label>
-              <div className="relative">
-                <select
-                  value={formData.assignTo}
-                  onChange={(e) => {
-                    const selectedName = e.target.value;
-                    const selectedEmp = employees.find(
-                      (emp) =>
-                        `${emp.first_name} ${emp.last_name}` === selectedName,
-                    );
-                    setFormData({
-                      ...formData,
-                      assignTo: selectedName,
-                      assignToId: selectedEmp?.id || 0,
-                    });
-                  }}
-                  disabled={
-                    isLoading || !formData.locationId || isLoadingEmployees
-                  }
-                  className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white appearance-none outline-none cursor-pointer pr-10 disabled:opacity-50"
-                >
-                  <option value="">
-                    {isLoadingEmployees ? "Loading..." : "Select employee..."}
-                  </option>
-                  {employees.map((emp) => (
-                    <option
-                      key={emp.id}
-                      value={`${emp.first_name} ${emp.last_name}`}
-                    >
-                      {emp.first_name} {emp.last_name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-                  size={16}
-                />
-              </div>
-            </div>
+          {/* Assign To - multi select */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1 flex items-center justify-between">
+              <span>Assign To *</span>
+              {formData.assignedToIds.length > 0 && (
+                <span className="text-[#c4a47c]">
+                  {formData.assignedToIds.length} selected
+                </span>
+              )}
+            </label>
+            <EmployeeMultiSelect
+              employees={employees}
+              selectedIds={formData.assignedToIds}
+              onChange={(ids) =>
+                setFormData({ ...formData, assignedToIds: ids })
+              }
+              isLoading={isLoadingEmployees}
+              disabled={isLoading || !formData.locationId}
+            />
           </div>
 
           {/* Toggle Options */}

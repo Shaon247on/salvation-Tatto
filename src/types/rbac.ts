@@ -61,6 +61,16 @@ export const ROLE_PERMISSIONS: RolePermissions[] = [
       "tasks:view",
       "tasks:create",
       "tasks:edit",
+      // Users
+      "users:view",
+      // Users Attendance
+      "users_attendance",
+      // Notifications
+      "notifications:view",
+      // Instructions
+      "instructions:view",
+      // QR Section
+      "qr-section",
       // Verifications
       "verifications:view",
       "verifications:approve",

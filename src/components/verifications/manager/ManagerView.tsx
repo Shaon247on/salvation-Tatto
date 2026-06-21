@@ -114,7 +114,6 @@ export default function VerificationsManager() {
           color="red"
         />{" "}
       </div>
-      ```
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-[#0A0A0A] border border-[#262626] rounded-2xl w-fit">
         {tabs.map((tab) => (

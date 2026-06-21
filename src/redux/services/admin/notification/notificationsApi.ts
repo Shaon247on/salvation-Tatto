@@ -8,21 +8,25 @@ export interface NotificationStats {
   active_locations: number;
 }
 
+export interface Recipients {
+  id: number;
+  name: string;
+  role: string;
+}
+
 export interface NotificationItem {
   id: number;
-  email: string;
-  location: number;
-  location_name: string;
   message: string;
-  status: string;
-  sent_by: number;
-  sent_by_name: string;
+  image: string;
+  recipients: Recipients;
   created_at: string; // ISO Date string
 }
 
 export interface GetNotificationsResponse {
-  stats: NotificationStats;
-  recent_notifications: NotificationItem[];
+  received: NotificationItem[];
+}
+export interface GetNotificationsSentResponse {
+  sent: NotificationItem[];
 }
 
 export interface SendNotificationRequest {
@@ -32,10 +36,9 @@ export interface SendNotificationRequest {
 }
 
 export interface SendBulkNotificationRequest {
-  emails: string[];
-  location?: number;
+  recipients: number[];
   message: string;
-  role?: string;
+  image?: File;
 }
 
 export interface SendNotificationResponse {
@@ -43,6 +46,20 @@ export interface SendNotificationResponse {
   sent_count: number;
   failed_count: number;
   total: number;
+}
+
+export interface RecipientItem {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: string;
+  location_id: number;
+  location__name: string;
+}
+
+export interface GetRecipientsResponse {
+  recipients: RecipientItem[];
 }
 
 // --- API Slice ---
@@ -61,7 +78,7 @@ export const notificationApi = baseApi.injectEndpoints({
       providesTags: (result) =>
         result
           ? [
-              ...result.recent_notifications.map(({ id }) => ({
+              ...result?.received?.map(({ id }) => ({
                 type: "Notifications" as const,
                 id,
               })),
@@ -70,6 +87,19 @@ export const notificationApi = baseApi.injectEndpoints({
           : [{ type: "Notifications", id: "LIST" }],
     }),
 
+    getSentNotification: builder.query<NotificationItem[], void>({
+      query: () => "/admin/notifications/sent/",
+      providesTags: (result) =>
+        result
+          ? [
+              ...result?.map(({ id }) => ({
+                type: "Notifications" as const,
+                id,
+              })),
+              { type: "Notifications", id: "LIST" },
+            ]
+          : [{ type: "Notifications", id: "LIST" }],
+    }),
     /**
      * POST: Send Admin Notification
      */
@@ -89,22 +119,40 @@ export const notificationApi = baseApi.injectEndpoints({
     /**
      * POST: Send Bulk Notification to multiple users/roles
      */
-    sendBulkNotification: builder.mutation<
-      SendNotificationResponse,
-      SendBulkNotificationRequest
-    >({
-      query: (bulkNotificationData) => ({
+    sendBulkNotification: builder.mutation<SendNotificationResponse, FormData>({
+      query: (formData) => ({
         url: "/admin/notifications/",
         method: "POST",
-        body: bulkNotificationData,
+        body: formData,
       }),
       invalidatesTags: [{ type: "Notifications", id: "LIST" }],
     }),
+    getRecipients: builder.query<
+      GetRecipientsResponse,
+      { search?: string; role?: string; location?: number }
+    >({
+      query: ({ search, role, location }) => {
+        const params = new URLSearchParams();
+
+        if (search?.trim()) params.append("search", search);
+        if (role?.trim()) params.append("role", role);
+        if (location) params.append("location", String(location));
+
+        return {
+          url: `/admin/notifications/recipients/?${params.toString()}`,
+          method: "GET",
+        };
+      },
+      providesTags: ["Notifications"],
+    }),
   }),
+  overrideExisting: true,
 });
 
 export const {
   useGetNotificationsQuery,
+  useGetSentNotificationQuery,
   useSendNotificationMutation,
   useSendBulkNotificationMutation,
+  useGetRecipientsQuery,
 } = notificationApi;

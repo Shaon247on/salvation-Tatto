@@ -1,279 +1,289 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
-import { Send, ChevronDown, AlertCircle, CheckCircle } from "lucide-react";
+import {
+  Send,
+  AlertCircle,
+  CheckCircle,
+  Image as ImageIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useSendBulkNotificationMutation } from "@/redux/services/admin/notification/notificationsApi";
-import { useGetEmployeesForDropdownQuery } from "@/redux/services/admin/tasks/taskApi";
-import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 
-interface Location {
-  id: number;
-  name: string;
-}
+import {
+  useGetRecipientsQuery,
+  useSendBulkNotificationMutation,
+} from "@/redux/services/admin/notification/notificationsApi";
+
+import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
+import Image from "next/image";
 
 export const SendNotificationForm = () => {
   const { isAuthenticated } = useAuth();
 
+  // -----------------------------
+  // State
+  // -----------------------------
   const [selectedLocation, setSelectedLocation] = useState<
     number | undefined
   >();
-  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string | undefined>();
+
+  const [selectedRecipients, setSelectedRecipients] = useState<number[]>([]);
   const [message, setMessage] = useState("");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+
   const [formStatus, setFormStatus] = useState<"idle" | "success" | "error">(
     "idle",
   );
   const [statusMessage, setStatusMessage] = useState("");
 
-  // Fetch active locations from API - skip if no token
+  // -----------------------------
+  // Locations
+  // -----------------------------
   const { data: locationsResponse, isLoading: isLoadingLocations } =
-    useGetLocationsQuery(undefined, {
-      skip: !isAuthenticated,
-    });
+    useGetLocationsQuery(undefined, { skip: !isAuthenticated });
+
   const activeLocations =
-    locationsResponse?.locations?.filter((loc) => loc.status === "active") ||
-    [];
+    locationsResponse?.locations?.filter((l) => l.status === "active") || [];
 
-  // Fetch employees for selected location
-  const { data: employeesResponse, isLoading: isLoadingEmployees } =
-    useGetEmployeesForDropdownQuery(selectedLocation as number, {
-      skip: !selectedLocation, // Skip query if no location ID selected
-    });
+  // -----------------------------
+  // Fetch control (CRITICAL FIX)
+  // -----------------------------
+  const shouldFetchRecipients = Boolean(selectedLocation || selectedRole);
 
+  // -----------------------------
+  // Recipients API
+  // -----------------------------
+  const { data: recipientsResponse, isLoading: isLoadingRecipients } =
+    useGetRecipientsQuery(
+      {
+        location: selectedLocation,
+        role: selectedRole,
+        search: "",
+      },
+      {
+        skip: !shouldFetchRecipients,
+      },
+    );
+
+  const recipients = recipientsResponse?.recipients || [];
+
+  // -----------------------------
+  // Mutation
+  // -----------------------------
   const [sendBulkNotification, { isLoading: isSending }] =
     useSendBulkNotificationMutation();
 
-  const employees = employeesResponse?.employees || [];
-
+  // -----------------------------
+  // Handlers
+  // -----------------------------
   const handleLocationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value ? Number(e.target.value) : undefined;
     setSelectedLocation(value);
-    setSelectedEmails([]); // Clear selected emails when location changes
+    setSelectedRecipients([]);
   };
 
-  const handleEmailToggle = (email: string) => {
-    setSelectedEmails((prev) =>
-      prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email],
+  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value || undefined;
+    setSelectedRole(value);
+    setSelectedRecipients([]);
+  };
+
+  const handleToggleRecipient = (id: number) => {
+    setSelectedRecipients((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id],
     );
   };
 
   const handleSelectAll = () => {
-    if (selectedEmails.length === employees.length) {
-      setSelectedEmails([]);
+    if (selectedRecipients.length === recipients.length) {
+      setSelectedRecipients([]);
     } else {
-      setSelectedEmails(employees.map((emp) => emp.email) || []);
+      setSelectedRecipients(recipients.map((r) => r.id));
     }
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) setSelectedImage(file);
+  };
+
+  // -----------------------------
+  // Submit
+  // -----------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!message.trim()) {
-      setStatusMessage("Please enter a message");
       setFormStatus("error");
+      setStatusMessage("Message is required");
       return;
     }
 
-    // Allow sending if:
-    // 1. User selected specific employees (location selected)
-    // 2. No location selected (send to all employees)
-    const hasRecipients = selectedEmails.length > 0 || !selectedLocation;
-
-    if (!hasRecipients) {
-      setStatusMessage("Please select employees to send notification");
-      setFormStatus("error");
-      return;
-    }
+    const targetRecipients =
+      selectedRecipients.length > 0
+        ? selectedRecipients
+        : recipients.map((r) => r.id);
 
     try {
-      await sendBulkNotification({
-        emails: selectedEmails,
-        location: selectedLocation,
-        message,
-      }).unwrap();
+      const formData = new FormData();
+
+      targetRecipients.forEach((id) => {
+        formData.append("recipients", String(id));
+      });
+
+      formData.append("message", message);
+
+      if (selectedImage) {
+        formData.append("image", selectedImage);
+      }
+
+      if (selectedLocation) {
+        formData.append("location", String(selectedLocation));
+      }
+
+      await sendBulkNotification(formData).unwrap();
 
       setFormStatus("success");
-      setStatusMessage("Notification sent successfully!");
+      setStatusMessage("Notification sent successfully");
+
       setMessage("");
-      setSelectedEmails([]);
+      setSelectedRecipients([]);
+      setSelectedImage(null);
 
       setTimeout(() => setFormStatus("idle"), 3000);
-    } catch (error) {
+    } catch (err) {
       setFormStatus("error");
-      setStatusMessage("Failed to send notification. Please try again.");
+      setStatusMessage("Failed to send notification");
     }
   };
 
-  const allEmployeesSelected =
-    selectedEmails.length === employees.length && employees.length > 0;
+  const allSelected =
+    recipients.length > 0 && selectedRecipients.length === recipients.length;
 
+  // -----------------------------
+  // UI
+  // -----------------------------
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="bg-[#0A0A0A] border border-[#968B79]/60 rounded-3xl p-8 h-full flex flex-col"
-    >
+    <form className="bg-[#0A0A0A] border border-[#968B79]/60 rounded-3xl p-8 flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center gap-3 mb-8">
         <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10">
           <Send size={18} className="text-gray-400" />
         </div>
         <div>
           <h3 className="text-white font-bold">Send Notification</h3>
-          <p className="text-gray-500 text-xs">
-            Notify employees about important updates
-          </p>
+          <p className="text-gray-500 text-xs">Broadcast updates</p>
         </div>
       </div>
 
       <div className="space-y-6 flex-1 overflow-y-auto">
-        {/* Status Message */}
+        {/* Status */}
         {formStatus !== "idle" && (
           <div
-            className={`flex items-center gap-3 p-4 rounded-xl border ${
+            className={`flex items-center gap-2 p-3 rounded-xl border ${
               formStatus === "success"
-                ? "bg-emerald-500/10 border-emerald-500/30"
-                : "bg-red-500/10 border-red-500/30"
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"
+                : "bg-red-500/10 border-red-500/30 text-red-500"
             }`}
           >
             {formStatus === "success" ? (
-              <CheckCircle size={18} className="text-emerald-500" />
+              <CheckCircle size={16} />
             ) : (
-              <AlertCircle size={18} className="text-red-500" />
+              <AlertCircle size={16} />
             )}
-            <p
-              className={`text-sm ${
-                formStatus === "success" ? "text-emerald-500" : "text-red-500"
-              }`}
-            >
-              {statusMessage}
-            </p>
+            <span className="text-sm">{statusMessage}</span>
           </div>
         )}
 
-        {/* Location Selection */}
-        <div className="space-y-2">
-          <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">
-            Branch
-          </label>
-          <div className="relative">
-            <select
-              value={selectedLocation || ""}
-              onChange={handleLocationChange}
-              disabled={isLoadingLocations}
-              className="w-full bg-black border border-[#968B79]/60 rounded-xl p-4 text-sm text-white appearance-none outline-none focus:border-white/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="">
-                {isLoadingLocations ? "Loading branches..." : "Select Branch"}
-              </option>
-              {activeLocations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={16}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none"
-            />
-          </div>
-        </div>
+        {/* Location */}
+        <select
+          value={selectedLocation || ""}
+          onChange={handleLocationChange}
+          className="w-full bg-black border border-[#968B79]/60 rounded-xl p-4 text-white"
+        >
+          <option value="">Select Branch</option>
+          {activeLocations.map((loc) => (
+            <option key={loc.id} value={loc.id}>
+              {loc.name}
+            </option>
+          ))}
+        </select>
 
-        {/* Employee Selection */}
-        {isLoadingEmployees && selectedLocation && (
-          <div className="text-center text-gray-500 text-sm py-4">
-            Loading employees...
-          </div>
-        )}
+        {/* Role */}
+        <select
+          value={selectedRole || ""}
+          onChange={handleRoleChange}
+          className="w-full bg-black border border-[#968B79]/60 rounded-xl p-4 text-white"
+        >
+          <option value="">Select Role</option>
+          <option value="staff">Staff</option>
+          <option value="branch_manager">Branch Manager</option>
+          <option value="district_manager">District Manager</option>
+          <option value="tattoo_artist">Tattoo Artist</option>
+          <option value="body_piercer">Body Piercer</option>
+        </select>
 
-        {!isLoadingEmployees && selectedLocation && employees.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase font-bold text-gray-500">
-                Select Recipients ({selectedEmails.length}/{employees.length})
+        {/* Recipients */}
+        {shouldFetchRecipients && (
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-[10px] uppercase text-gray-500">
+                Recipients ({selectedRecipients.length}/{recipients.length})
               </label>
+
               <button
                 type="button"
                 onClick={handleSelectAll}
-                className="text-[10px] text-blue-400 hover:text-blue-300 underline"
+                className="text-[10px] text-blue-400"
               >
-                {allEmployeesSelected ? "Clear All" : "Select All"}
+                {allSelected ? "Clear All" : "Select All"}
               </button>
             </div>
 
-            <div className="bg-black border border-[#968B79]/60 rounded-xl p-3 space-y-2 max-h-40 overflow-y-auto">
-              {employees.map((employee) => (
-                <label
-                  key={employee.id}
-                  className="flex items-center gap-3 p-2 rounded hover:bg-white/5 cursor-pointer transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedEmails.includes(employee.email)}
-                    onChange={() => handleEmailToggle(employee.email)}
-                    className="w-4 h-4 rounded border-gray-600 cursor-pointer shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm text-white truncate">
-                        {employee.first_name} {employee.last_name}
+            <div className="max-h-40 overflow-y-auto border border-[#968B79]/60 rounded-xl p-3 space-y-2">
+              {isLoadingRecipients ? (
+                <p className="text-xs text-gray-400">Loading...</p>
+              ) : recipients.length === 0 ? (
+                <p className="text-xs text-gray-500">No recipients found</p>
+              ) : (
+                recipients.map((r) => (
+                  <label key={r.id} className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedRecipients.includes(r.id)}
+                      onChange={() => handleToggleRecipient(r.id)}
+                    />
+                    <div>
+                      <p className="text-white text-sm">
+                        {r.first_name} {r.last_name}
                       </p>
-                      <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded border border-blue-500/30 whitespace-nowrap">
-                        {employee.role_display || employee.role}
-                      </span>
+                      <p className="text-xs text-gray-400">{r.email}</p>
+                      <p className="text-[10px] text-blue-400">{r.role}</p>
                     </div>
-                    <p className="text-xs text-gray-400 truncate">
-                      {employee.email}
-                    </p>
-                  </div>
-                </label>
-              ))}
+                  </label>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {!isLoadingEmployees && selectedLocation && employees.length === 0 && (
-          <div className="text-center text-gray-500 text-sm py-4">
-            No employees found at this location
-          </div>
-        )}
-
-        {!selectedLocation && (
-          <div className="text-center text-gray-400 text-sm py-4 px-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
-            <p className="text-blue-400 font-semibold">No location selected</p>
-            <p className="text-xs mt-1">
-              Message will be sent to all employees
-            </p>
-          </div>
-        )}
-
-        {/* Message Input */}
-        <div className="space-y-2">
-          <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">
-            Message
-          </label>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Enter your message here..."
-            className="w-full bg-black border border-[#968B79]/60 rounded-2xl p-4 text-sm text-white min-h-24 outline-none resize-none focus:border-white/40"
-          />
-          <p className="text-[10px] text-gray-500">
-            {message.length} characters
-          </p>
-        </div>
+        {/* Message */}
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          className="w-full bg-black border border-[#968B79]/60 rounded-2xl p-4 text-white min-h-24"
+          placeholder="Message..."
+        />
       </div>
 
-      {/* Submit Button */}
+      {/* Submit */}
       <button
         type="submit"
-        disabled={
-          Boolean(isSending) ||
-          Boolean(isLoadingEmployees) ||
-          Boolean(selectedLocation && selectedEmails.length === 0)
-        }
-        className="w-full bg-white text-black py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-gray-200 transition-all mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={isSending}
+        className="w-full mt-6 bg-white text-black py-4 rounded-2xl font-bold"
       >
-        <Send size={18} /> {isSending ? "Sending..." : "Send Notification"}
+        {isSending ? "Sending..." : "Send Notification"}
       </button>
     </form>
   );

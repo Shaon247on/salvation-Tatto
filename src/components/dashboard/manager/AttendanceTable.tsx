@@ -5,7 +5,7 @@ import { DistrictManagerDashboardResponse } from "@/types/districtManager/distri
 
 const AttendanceTable = ({ data }: { data: DistrictManagerDashboardResponse['attendance_summary'] }) => {
   return (
-    <div className="bg-[#0A0A0A] border  border-[#968B79]/60 rounded-2xl p-6 w-full flex flex-col h-112.5">
+    <div className="bg-[#0A0A0A] border overflow-hidden border-[#968B79]/60 rounded-2xl p-6 w-full flex flex-col h-112.5">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h3 className="text-white text-lg font-bold">Attendance Summary</h3>

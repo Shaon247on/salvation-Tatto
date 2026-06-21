@@ -58,7 +58,7 @@ export interface Task {
   status: Status;
   assigned_to_name: string;
   due_date: string;
-  assigned_to: number;
+  assigned_to: number[];
   assigned_to_role: string;
   location_name: string;
   location: number;
@@ -70,6 +70,25 @@ export interface Task {
   can_fire?: boolean;
   requires_photo?: boolean;
 }
+
+type TaskModalDTO = {
+  taskName: string;
+  description: string;
+  location: string;
+  locationId: number;
+  assignedTo: string;
+  assignedToIds: number[];
+  dueDate: string;
+  employeeName: string;
+  employeeInitials: string;
+  role: string;
+  status: DisplayStatus;
+  imageUrl: string | null;
+  email: string;
+  isRecurring: boolean;
+  frequency: string;
+  requirePhoto: boolean;
+};
 
 // --- Helper Mapping ---
 const mapStatusToDisplay = (status: Status): DisplayStatus => {
@@ -188,30 +207,30 @@ export default function TaskManagementSystem() {
     requires_photo: apiTask.requires_photo,
   });
 
-  const mapTaskToModal = (task: Task | null) => {
-    if (!task) return null;
-    return {
-      taskName: task.title,
-      description: task.description,
-      location: task.location_name,
-      locationId: task.location,
-      assignedTo: task.assigned_to_name,
-      assignedToId: task.assigned_to,
-      dueDate: task.due_date,
-      employeeName: task.assigned_to_name,
-      employeeInitials: task.assigned_to_name
-        .split(" ")
-        .map((n) => n[0])
-        .join(""),
-      role: task.assigned_to_role,
-      status: mapStatusToDisplay(task.status),
-      imageUrl: task.photo_url || null,
-      email: task.assigned_to_email,
-      isRecurring: task.is_recurring,
-      frequency: task.frequency,
-      requirePhoto: task.requires_photo || false,
-    };
+ const mapTaskToModal = (task: Task | null): TaskModalDTO | null => {
+  if (!task) return null;
+
+  const name = task.assigned_to_name ?? "";
+
+  return {
+    taskName: task.title ?? "",
+    description: task.description ?? "",
+    location: task.location_name ?? "",
+    locationId: task.location ?? 0,
+    assignedTo: name,
+    assignedToIds: task.assigned_to ?? [],
+    dueDate: task.due_date ?? "",
+    employeeName: name,
+    employeeInitials: name ? name.split(" ").map(n => n[0]).join("") : "",
+    role: task.assigned_to_role ?? "",
+    status: mapStatusToDisplay(task.status),
+    imageUrl: task.photo_url ?? null,
+    email: task.assigned_to_email ?? "",
+    isRecurring: task.is_recurring ?? false,
+    frequency: task.frequency ?? "none",
+    requirePhoto: task.requires_photo ?? false,
   };
+};
 
   // --- CRUD Handlers ---
   const handleActionClick = (task: Task) => {
@@ -242,7 +261,7 @@ export default function TaskManagementSystem() {
       title: formData.title,
       description: formData.description,
       location: formData.locationId,
-      assigned_to: formData.assignToId,
+      assigned_to: formData.assignedToIds,
       due_date: formData.dueDate,
       is_recurring: formData.isRecurring,
       requires_photo: formData.requirePhoto,

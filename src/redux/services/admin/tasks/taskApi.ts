@@ -12,13 +12,10 @@ export interface TaskUser {
 
 interface TaskUserDetails {
   id: number;
-  first_name: string;
-  last_name: string;
-  username: string;
+  name: string;
   email: string;
   role: string;
   role_display: string;
-  location_name?: string; // optional — not present on all users (e.g. created_by)
 }
 
 export interface TaskDetails {
@@ -30,7 +27,13 @@ export interface TaskDetails {
   assigned_to: TaskUserDetails;
   created_by: TaskUser;
   due_date: string;
-  status: "pending" | "completed" | "approved" | "rejected" | "overdue" | "awaiting_review";
+  status:
+    | "pending"
+    | "completed"
+    | "approved"
+    | "rejected"
+    | "overdue"
+    | "awaiting_review";
   status_display: string;
   is_recurring: boolean;
   frequency: "none" | "today" | "weekly" | "monthly" | "yearly";
@@ -55,7 +58,7 @@ export interface Task {
   description: string;
   location: number;
   location_name: string;
-  assigned_to: number;
+  assigned_to: number[];
   assigned_to_name: string;
   assigned_to_email: string;
   assigned_to_role: string;
@@ -125,7 +128,7 @@ export interface TaskRequest {
   title: string;
   description: string;
   location: number;
-  assigned_to: number;
+  assigned_to: number[];
   due_date: string;
   is_recurring: boolean;
   frequency?: "daily" | "weekly" | "monthly" | "yearly" | "none";
@@ -244,6 +247,7 @@ export const taskApi = baseApi.injectEndpoints({
       ],
     }),
   }),
+  overrideExisting: true,
 });
 
 export const {

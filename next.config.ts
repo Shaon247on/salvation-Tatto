@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  /* Add this section below */
   images: {
     remotePatterns: [
       {
@@ -17,6 +16,13 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
+        port: "",
+        pathname: "/**",
+      },
+      // Added this entry to fix the error
+      {
+        protocol: "https",
+        hostname: "api.salvationhq.com",
         port: "",
         pathname: "/**",
       },

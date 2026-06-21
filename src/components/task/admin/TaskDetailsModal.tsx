@@ -42,15 +42,11 @@ const TaskDetailsModal = ({
   const isRejected = data?.status === "rejected";
 
   const employeeName = data
-    ? `${data.assigned_to.first_name} ${data.assigned_to.last_name}`.trim() ||
-      data.assigned_to.username
+    ? data.assigned_to.name
     : "";
 
   const employeeInitials = data
-    ? (
-        (data.assigned_to.first_name?.[0] ?? "") +
-        (data.assigned_to.last_name?.[0] ?? "")
-      ).toUpperCase() || data.assigned_to.username.slice(0, 2).toUpperCase()
+    ? data.assigned_to.name.slice(0, 2).toUpperCase()
     : "";
 
   return (
