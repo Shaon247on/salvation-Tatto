@@ -27,10 +27,10 @@ export default function TaskPage() {
   // Dispatcher Logic
   switch (role) {
     case "super_admin":
-      // return <AdminView />;
-      return <TaskManagementSystem />;
+    // return <AdminView />;
     case "district_manager":
-      return <ManagerView />;
+      return <TaskManagementSystem />;
+    // return <ManagerView />;
     case "branch_manager":
       return <BranchManagerView />;
     default:

@@ -10,30 +10,39 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  Loader2,
 } from "lucide-react";
 
 // --- Import RTK Query Hooks ---
-
 import { useAppSelector } from "@/redux/store";
-import { selectCurrentToken } from "@/redux/features/auth/authSlice";
+import { selectCurrentToken, selectUserRole } from "@/redux/features/auth/authSlice";
 
 // --- Import Modal Components ---
 import { TaskActionModal } from "./TaskActionModal";
 import TaskDetailsModal from "./TaskDetailsModal";
 import FireUserModal from "./FireUserModal";
 import RejectModal from "./RejectModal";
-import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
+
+// --- Import API Hooks ---
 import {
-  TaskRequest,
-  Task as ApiTask,
-  useApproveTaskMutation,
-  useCreateTaskMutation,
-  useDeleteTaskMutation,
-  useEditTaskMutation,
-  useFireUserMutation,
   useGetTasksQuery,
+  useCreateTaskMutation,
+  useEditTaskMutation,
+  useDeleteTaskMutation,
+  useApproveTaskMutation,
   useRejectTaskMutation,
+  useFireUserMutation,
+  useGetEmployeesForDropdownQuery,
+  useGetTasksByDistrictManagerQuery,
+  useGetLocationsByDistrictManagerQuery,
+  useGetEmployeesByLocationByDistrictManagerQuery,
+  useCreateTaskByDistrictManagerMutation,
+  useUpdateTaskByDistrictManagerMutation,
+  useDeleteTaskByDistrictManagerMutation,
 } from "@/redux/services/admin/tasks/taskApi";
+
+// --- Import Location API ---
+import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 
 // --- Types ---
 export type Status =
@@ -70,9 +79,9 @@ export interface Task {
   rejection_reason?: string | null;
   can_fire?: boolean;
   requires_photo?: boolean;
-  assignments: ApiTask["assignments"];
-  status_counts: ApiTask["status_counts"];
-  created_by: ApiTask["created_by"];
+  assignments: any[];
+  status_counts: any;
+  created_by: any;
   created_at: string;
 }
 
@@ -108,7 +117,7 @@ const mapStatusToDisplay = (status: Status): DisplayStatus => {
   return statusMap[status] || "Pending";
 };
 
-const getTaskSummaryStatus = (task: ApiTask): Status => {
+const getTaskSummaryStatus = (task: any): Status => {
   const counts = task.status_counts || {
     pending: 0,
     awaiting_review: 0,
@@ -120,7 +129,7 @@ const getTaskSummaryStatus = (task: ApiTask): Status => {
   if (counts.rejected > 0) return "rejected";
   if (counts.awaiting_review > 0) return "awaiting_review";
   if (counts.overdue > 0) return "overdue";
-  if (counts.approved > 0 && counts.approved >= task.assignments.length) {
+  if (counts.approved > 0 && counts.approved >= (task.assignments?.length || 0)) {
     return "approved";
   }
   return "pending";
@@ -128,6 +137,10 @@ const getTaskSummaryStatus = (task: ApiTask): Status => {
 
 export default function TaskManagementSystem() {
   const token = useAppSelector(selectCurrentToken);
+  const userRole = useAppSelector(selectUserRole);
+
+  // Determine if user is district manager
+  const isDistrictManager = userRole === "district_manager";
 
   // --- State ---
   const [search, setSearch] = useState("");
@@ -146,41 +159,73 @@ export default function TaskManagementSystem() {
 
   const itemsPerPage = 15;
 
-  // --- API Queries ---
+  // --- API Queries based on role ---
   const {
     data: tasksData,
     isLoading,
     isError,
     refetch,
-  } = useGetTasksQuery(
-    {
-      page: currentPage,
-      location: locationFilterId ?? undefined,
-      status:
-        statusFilter !== "All Status"
-          ? (statusFilter.toLowerCase().replace(" ", "_") as any)
-          : undefined,
-      search,
-      period: (frequencyFilter !== "All"
-        ? frequencyFilter.toLowerCase()
-        : undefined) as any,
-    },
-    { skip: !token },
-  );
+  } = isDistrictManager
+    ? useGetTasksByDistrictManagerQuery(
+        {
+          page: currentPage,
+          location: locationFilterId ?? undefined,
+          search,
+        },
+        { skip: !token },
+      )
+    : useGetTasksQuery(
+        {
+          page: currentPage,
+          location: locationFilterId ?? undefined,
+          status:
+            statusFilter !== "All Status"
+              ? (statusFilter.toLowerCase().replace(" ", "_") as any)
+              : undefined,
+          search,
+          period: (frequencyFilter !== "All"
+            ? frequencyFilter.toLowerCase()
+            : undefined) as any,
+        },
+        { skip: !token },
+      );
 
-  const { data: locationsData } = useGetLocationsQuery(undefined, {
-    skip: !token,
-  });
+  // Locations query based on role
+  const {
+    data: locationsData,
+    isLoading: locationsLoading,
+  } = isDistrictManager
+    ? useGetLocationsByDistrictManagerQuery(undefined, { skip: !token })
+    : useGetLocationsQuery(undefined, { skip: !token });
 
-  // --- Mutations ---
-  const [createTask, { isLoading: isCreating }] = useCreateTaskMutation();
-  const [editTask, { isLoading: isEditing }] = useEditTaskMutation();
-  const [deleteTask, { isLoading: isDeleting }] = useDeleteTaskMutation();
-  const [approveTask, { isLoading: isApproving }] = useApproveTaskMutation();
-  const [rejectTask, { isLoading: isRejecting }] = useRejectTaskMutation();
-  const [fireUser, { isLoading: isFiring }] = useFireUserMutation();
+  // --- Mutations based on role ---
+  const [createTaskAdmin, { isLoading: isCreatingAdmin }] = useCreateTaskMutation();
+  const [editTaskAdmin, { isLoading: isEditingAdmin }] = useEditTaskMutation();
+  const [deleteTaskAdmin, { isLoading: isDeletingAdmin }] = useDeleteTaskMutation();
+  const [approveTaskAdmin, { isLoading: isApprovingAdmin }] = useApproveTaskMutation();
+  const [rejectTaskAdmin, { isLoading: isRejectingAdmin }] = useRejectTaskMutation();
+  const [fireUserAdmin, { isLoading: isFiringAdmin }] = useFireUserMutation();
 
-  // --- Filter Handlers (Resetting page here avoids the Effect error) ---
+  const [createTaskDM, { isLoading: isCreatingDM }] = useCreateTaskByDistrictManagerMutation();
+  const [editTaskDM, { isLoading: isEditingDM }] = useUpdateTaskByDistrictManagerMutation();
+  const [deleteTaskDM, { isLoading: isDeletingDM }] = useDeleteTaskByDistrictManagerMutation();
+
+  // Select the appropriate mutations based on role
+  const createTask = isDistrictManager ? createTaskDM : createTaskAdmin;
+  const editTask = isDistrictManager ? editTaskDM : editTaskAdmin;
+  const deleteTask = isDistrictManager ? deleteTaskDM : deleteTaskAdmin;
+  const approveTask = approveTaskAdmin;
+  const rejectTask = rejectTaskAdmin;
+  const fireUser = fireUserAdmin;
+
+  const isCreating = isDistrictManager ? isCreatingDM : isCreatingAdmin;
+  const isEditing = isDistrictManager ? isEditingDM : isEditingAdmin;
+  const isDeleting = isDistrictManager ? isDeletingDM : isDeletingAdmin;
+  const isApproving = isApprovingAdmin;
+  const isRejecting = isRejectingAdmin;
+  const isFiring = isFiringAdmin;
+
+  // --- Filter Handlers ---
   const handleSearchChange = (val: string) => {
     setSearch(val);
     setCurrentPage(1);
@@ -202,39 +247,38 @@ export default function TaskManagementSystem() {
     if (locationName === "All Locations") {
       setLocationFilterId(null);
     } else {
-      const activeLocations =
-        locationsData?.locations?.filter((loc) => loc.status === "active") ||
-        [];
-      const location = activeLocations.find((loc) => loc.name === locationName);
+      const locations = locationsData?.locations || [];
+      const location = locations.find((loc: any) => loc.name === locationName);
       setLocationFilterId(location?.id || null);
     }
   };
 
   // --- Helper: Data Mappers ---
-  const mapApiTaskToDisplay = (apiTask: ApiTask): Task => {
+  const mapApiTaskToDisplay = (apiTask: any): Task => {
     const assignments = apiTask.assignments || [];
     const firstAssignment = assignments[0];
 
+    // Handle different ID field names
+    const taskId = apiTask.task_id || apiTask.id;
+
     return {
-      id: apiTask.task_id,
+      id: taskId,
       title: apiTask.title,
       description: apiTask.description,
       status: getTaskSummaryStatus(apiTask),
       assigned_to_name: assignments
-        .map((assignment) => assignment.employee.name)
+        .map((assignment: any) => assignment.employee?.name || "")
         .join(", "),
       due_date: apiTask.due_date,
-      assigned_to: assignments.map((assignment) => assignment.employee.id),
-      assigned_to_role: firstAssignment?.employee.role_display || "",
+      assigned_to: assignments.map((assignment: any) => assignment.employee?.employee_id || assignment.employee?.id || 0),
+      assigned_to_role: firstAssignment?.employee?.role_display || firstAssignment?.employee?.role || "",
       location_name: apiTask.location_name,
       location: apiTask.location,
       frequency: apiTask.frequency || "none",
-      assigned_to_email: firstAssignment?.employee.email || "",
+      assigned_to_email: firstAssignment?.employee?.email || "",
       is_recurring: apiTask.is_recurring,
       photo_url: firstAssignment?.photo_url || null,
-      rejection_reason:
-        assignments.find((assignment) => assignment.rejection_reason)
-          ?.rejection_reason || null,
+      rejection_reason: assignments.find((assignment: any) => assignment.rejection_reason)?.rejection_reason || null,
       requires_photo: apiTask.requires_photo,
       assignments,
       status_counts: apiTask.status_counts,
@@ -246,8 +290,7 @@ export default function TaskManagementSystem() {
   const mapTaskToModal = (task: Task | null): TaskModalDTO | null => {
     if (!task) return null;
 
-    const assignmentNames =
-      task.assignments?.map((assignment) => assignment.employee.name) || [];
+    const assignmentNames = task.assignments?.map((assignment: any) => assignment.employee?.name || "") || [];
     const name = assignmentNames.join(", ") || task.assigned_to_name || "";
 
     return {
@@ -256,8 +299,7 @@ export default function TaskManagementSystem() {
       location: task.location_name ?? "",
       locationId: task.location ?? 0,
       assignedTo: name,
-      assignedToIds:
-        task.assignments?.map((assignment) => assignment.employee.id) || [],
+      assignedToIds: task.assignments?.map((assignment: any) => assignment.employee?.employee_id || assignment.employee?.id || 0) || [],
       dueDate: task.due_date ?? "",
       employeeName: name,
       employeeInitials: name
@@ -309,7 +351,6 @@ export default function TaskManagementSystem() {
       due_date: formData.dueDate,
       is_recurring: formData.isRecurring,
       requires_photo: formData.requirePhoto,
-
       ...(formData.isRecurring && {
         frequency: formData.frequency,
       }),
@@ -319,7 +360,7 @@ export default function TaskManagementSystem() {
       if (selectedTask) {
         await editTask({ id: selectedTask.id, data: payload }).unwrap();
       } else {
-        await createTask(payload as TaskRequest).unwrap();
+        await createTask(payload as any).unwrap();
       }
       refetch();
       setIsActionOpen(false);
@@ -363,7 +404,7 @@ export default function TaskManagementSystem() {
   if (isLoading && !tasksData)
     return (
       <div className="flex items-center justify-center min-h-screen">
-        Loading...
+        <Loader2 className="w-8 h-8 animate-spin text-[#c4a47c]" />
       </div>
     );
   if (isError)
@@ -373,21 +414,23 @@ export default function TaskManagementSystem() {
       </div>
     );
 
-  const tasks = tasksData?.tasks?.results || [];
-
-  const totalTasks = tasksData?.tasks?.count || 0;
+  // Handle different response structures
+  const tasks = tasksData?.tasks?.results || tasksData?.tasks || [];
+  const totalTasks = tasksData?.tasks?.count || tasksData?.tasks_meta?.count || tasksData?.tasks?.length || 0;
   const totalPages = Math.ceil(totalTasks / itemsPerPage);
+  
+  // Handle different stats structures
   const stats = tasksData?.stats || {
-    all_tasks: 0,
+    all_tasks: tasksData?.tasks?.length || 0,
     overdue: 0,
     completed: 0,
     rejected: 0,
   };
+
+  // Location options
   const locationOptions = [
     "All Locations",
-    ...(locationsData?.locations
-      ?.filter((l) => l.status === "active")
-      .map((l) => l.name) || []),
+    ...(locationsData?.locations?.map((loc: any) => loc.name) || []),
   ];
 
   return (
@@ -405,28 +448,32 @@ export default function TaskManagementSystem() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <FilterDropdown
-            value={frequencyFilter}
-            onChange={handleFrequencyChange}
-            options={["All", "daily", "weekly", "monthly", "yearly"]}
-          />
+          {!isDistrictManager && (
+            <FilterDropdown
+              value={frequencyFilter}
+              onChange={handleFrequencyChange}
+              options={["All", "daily", "weekly", "monthly", "yearly"]}
+            />
+          )}
           <FilterDropdown
             value={locationFilter}
             onChange={handleLocationFilterChange}
             options={locationOptions}
           />
-          <FilterDropdown
-            value={statusFilter}
-            onChange={handleStatusChange}
-            options={[
-              "All Status",
-              "Approved",
-              "Awaiting Review",
-              "Rejected",
-              "Overdue",
-              "Pending",
-            ]}
-          />
+          {!isDistrictManager && (
+            <FilterDropdown
+              value={statusFilter}
+              onChange={handleStatusChange}
+              options={[
+                "All Status",
+                "Approved",
+                "Awaiting Review",
+                "Rejected",
+                "Overdue",
+                "Pending",
+              ]}
+            />
+          )}
 
           <button
             onClick={() => {
@@ -444,22 +491,22 @@ export default function TaskManagementSystem() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           label="All Tasks"
-          val={stats.all_tasks}
+          val={stats.all_tasks || stats.total || 0}
           color="border-[#c4a47c]/20"
         />
         <StatCard
           label="Overdue"
-          val={stats.overdue}
+          val={stats.overdue || 0}
           color="border-red-500/20"
         />
         <StatCard
-          label="Completed"
-          val={stats.completed}
-          color="border-green-500/20"
+          label="Pending"
+          val={stats.pending || 0}
+          color="border-yellow-500/20"
         />
         <StatCard
           label="Rejected"
-          val={stats.rejected}
+          val={stats.rejected || 0}
           color="border-red-500/20"
         />
       </div>
@@ -473,7 +520,6 @@ export default function TaskManagementSystem() {
                 <th className="px-6 py-4">Task Name</th>
                 <th className="px-6 py-4">Created At</th>
                 <th className="px-6 py-4">Due Date</th>
-                {/* <th className="px-6 py-4">Assigned To</th> */}
                 <th className="px-6 py-4">Location</th>
                 <th className="px-6 py-4 text-center">Pending</th>
                 <th className="px-6 py-4 text-center">Awaited Review</th>
@@ -484,9 +530,8 @@ export default function TaskManagementSystem() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e1e20]">
-              {tasks.map((apiTask,) => {
+              {tasks.map((apiTask: any) => {
                 const task = mapApiTaskToDisplay(apiTask);
-
                 const displayStatus = mapStatusToDisplay(task.status);
                 const counts = task.status_counts || {
                   pending: 0,
@@ -512,7 +557,6 @@ export default function TaskManagementSystem() {
                             <span className="font-semibold text-sm text-white">
                               {task.title}
                             </span>
-                            {/* <StatusBadge status={displayStatus} /> */}
                           </div>
                           <p className="text-xs text-gray-500 line-clamp-1">
                             {task.description}
@@ -530,11 +574,6 @@ export default function TaskManagementSystem() {
                     >
                       {task.due_date}
                     </td>
-                    {/* <td className="px-6 py-5">
-                      <div className="text-sm text-center font-medium">
-                        {task.assignments?.length}
-                      </div>
-                    </td> */}
                     <td className="px-6 py-5 text-sm">{task.location_name}</td>
                     <td className="px-6 py-5 text-center text-sm font-medium">
                       <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
@@ -608,7 +647,7 @@ export default function TaskManagementSystem() {
         <div className="flex items-center gap-2">
           {/* Previous */}
           <button
-            disabled={!tasksData?.tasks?.previous}
+            disabled={currentPage === 1}
             onClick={() => setCurrentPage((p) => p - 1)}
             className="p-2 border border-[#2a2a2d] rounded-lg disabled:opacity-30"
           >
@@ -616,7 +655,7 @@ export default function TaskManagementSystem() {
           </button>
 
           {/* Page Numbers */}
-          {Array.from({ length: totalPages }, (_, index) => {
+          {Array.from({ length: Math.min(totalPages, 10) }, (_, index) => {
             const page = index + 1;
 
             return (
@@ -636,7 +675,7 @@ export default function TaskManagementSystem() {
 
           {/* Next */}
           <button
-            disabled={!tasksData?.tasks?.next}
+            disabled={currentPage === totalPages}
             onClick={() => setCurrentPage((p) => p + 1)}
             className="p-2 border border-[#2a2a2d] rounded-lg disabled:opacity-30"
           >
@@ -757,23 +796,6 @@ function StatusIcon({ status }: { status: DisplayStatus }) {
     >
       <div className="w-3.5 h-3.5 border-2 border-current rounded-sm" />
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: DisplayStatus }) {
-  const styles: any = {
-    Approved: "text-green-500 bg-green-500/10",
-    Overdue: "text-red-500 bg-red-500/10",
-    "Awaiting Review": "text-purple-500 bg-purple-500/10",
-    Pending: "text-blue-500 bg-blue-500/10",
-    Rejected: "text-red-500 bg-red-500/10",
-  };
-  return (
-    <span
-      className={`text-[9px] px-2 py-0.5 rounded border border-current/20 font-bold uppercase ${styles[status]}`}
-    >
-      {status}
-    </span>
   );
 }
 

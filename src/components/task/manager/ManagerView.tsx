@@ -9,8 +9,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import TaskItem from "./TaskItem";
-import { useState } from "react";
-import { TaskActionModal } from "../admin/TaskActionModal";
+import { useState } from "react"
 import { useGetTasksByDistrictManagerQuery, useGetLocationsByDistrictManagerQuery, useDeleteTaskByDistrictManagerMutation, useCreateTaskByDistrictManagerMutation, useUpdateTaskByDistrictManagerMutation } from "@/redux/services/districtManager/distictManagerTaskApi";
 import { DistrictManagerTaskActionModel } from "./DistrictManagerTaskActionModel";
 
