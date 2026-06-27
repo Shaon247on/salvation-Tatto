@@ -25,6 +25,7 @@ import RejectModal from "./RejectModal";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 import {
   TaskRequest,
+  Task as ApiTask,
   useApproveTaskMutation,
   useCreateTaskMutation,
   useDeleteTaskMutation,
@@ -62,13 +63,17 @@ export interface Task {
   assigned_to_role: string;
   location_name: string;
   location: number;
-  frequency: "none" | "daily" | "weekly" | "monthly" | "yearly" | "daily";
+  frequency: "none" | "today" | "daily" | "weekly" | "monthly" | "yearly";
   assigned_to_email: string;
   is_recurring: boolean;
   photo_url?: string | null;
   rejection_reason?: string | null;
   can_fire?: boolean;
   requires_photo?: boolean;
+  assignments: ApiTask["assignments"];
+  status_counts: ApiTask["status_counts"];
+  created_by: ApiTask["created_by"];
+  created_at: string;
 }
 
 type TaskModalDTO = {
@@ -103,6 +108,24 @@ const mapStatusToDisplay = (status: Status): DisplayStatus => {
   return statusMap[status] || "Pending";
 };
 
+const getTaskSummaryStatus = (task: ApiTask): Status => {
+  const counts = task.status_counts || {
+    pending: 0,
+    awaiting_review: 0,
+    approved: 0,
+    rejected: 0,
+    overdue: 0,
+  };
+
+  if (counts.rejected > 0) return "rejected";
+  if (counts.awaiting_review > 0) return "awaiting_review";
+  if (counts.overdue > 0) return "overdue";
+  if (counts.approved > 0 && counts.approved >= task.assignments.length) {
+    return "approved";
+  }
+  return "pending";
+};
+
 export default function TaskManagementSystem() {
   const token = useAppSelector(selectCurrentToken);
 
@@ -121,7 +144,7 @@ export default function TaskManagementSystem() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  const itemsPerPage = 10;
+  const itemsPerPage = 15;
 
   // --- API Queries ---
   const {
@@ -188,49 +211,70 @@ export default function TaskManagementSystem() {
   };
 
   // --- Helper: Data Mappers ---
-  const mapApiTaskToDisplay = (apiTask: Task): Task => ({
-    id: apiTask.id,
-    title: apiTask.title,
-    description: apiTask.description,
-    status: apiTask.status as Status,
-    assigned_to_name: apiTask.assigned_to_name,
-    due_date: apiTask.due_date,
-    assigned_to: apiTask.assigned_to,
-    assigned_to_role: apiTask.assigned_to_role,
-    location_name: apiTask.location_name,
-    location: apiTask.location,
-    frequency: (apiTask.frequency as any) || "none",
-    assigned_to_email: apiTask.assigned_to_email,
-    is_recurring: apiTask.is_recurring,
-    photo_url: apiTask.photo_url,
-    rejection_reason: apiTask.rejection_reason,
-    requires_photo: apiTask.requires_photo,
-  });
+  const mapApiTaskToDisplay = (apiTask: ApiTask): Task => {
+    const assignments = apiTask.assignments || [];
+    const firstAssignment = assignments[0];
 
- const mapTaskToModal = (task: Task | null): TaskModalDTO | null => {
-  if (!task) return null;
-
-  const name = task.assigned_to_name ?? "";
-
-  return {
-    taskName: task.title ?? "",
-    description: task.description ?? "",
-    location: task.location_name ?? "",
-    locationId: task.location ?? 0,
-    assignedTo: name,
-    assignedToIds: task.assigned_to ?? [],
-    dueDate: task.due_date ?? "",
-    employeeName: name,
-    employeeInitials: name ? name.split(" ").map(n => n[0]).join("") : "",
-    role: task.assigned_to_role ?? "",
-    status: mapStatusToDisplay(task.status),
-    imageUrl: task.photo_url ?? null,
-    email: task.assigned_to_email ?? "",
-    isRecurring: task.is_recurring ?? false,
-    frequency: task.frequency ?? "none",
-    requirePhoto: task.requires_photo ?? false,
+    return {
+      id: apiTask.task_id,
+      title: apiTask.title,
+      description: apiTask.description,
+      status: getTaskSummaryStatus(apiTask),
+      assigned_to_name: assignments
+        .map((assignment) => assignment.employee.name)
+        .join(", "),
+      due_date: apiTask.due_date,
+      assigned_to: assignments.map((assignment) => assignment.employee.id),
+      assigned_to_role: firstAssignment?.employee.role_display || "",
+      location_name: apiTask.location_name,
+      location: apiTask.location,
+      frequency: apiTask.frequency || "none",
+      assigned_to_email: firstAssignment?.employee.email || "",
+      is_recurring: apiTask.is_recurring,
+      photo_url: firstAssignment?.photo_url || null,
+      rejection_reason:
+        assignments.find((assignment) => assignment.rejection_reason)
+          ?.rejection_reason || null,
+      requires_photo: apiTask.requires_photo,
+      assignments,
+      status_counts: apiTask.status_counts,
+      created_by: apiTask.created_by,
+      created_at: apiTask.created_at,
+    };
   };
-};
+
+  const mapTaskToModal = (task: Task | null): TaskModalDTO | null => {
+    if (!task) return null;
+
+    const assignmentNames =
+      task.assignments?.map((assignment) => assignment.employee.name) || [];
+    const name = assignmentNames.join(", ") || task.assigned_to_name || "";
+
+    return {
+      taskName: task.title ?? "",
+      description: task.description ?? "",
+      location: task.location_name ?? "",
+      locationId: task.location ?? 0,
+      assignedTo: name,
+      assignedToIds:
+        task.assignments?.map((assignment) => assignment.employee.id) || [],
+      dueDate: task.due_date ?? "",
+      employeeName: name,
+      employeeInitials: name
+        ? name
+            .split(" ")
+            .map((n) => n[0])
+            .join("")
+        : "",
+      role: task.assigned_to_role ?? "",
+      status: mapStatusToDisplay(task.status),
+      imageUrl: task.photo_url ?? null,
+      email: task.assigned_to_email ?? "",
+      isRecurring: task.is_recurring ?? false,
+      frequency: task.frequency ?? "none",
+      requirePhoto: task.requires_photo ?? false,
+    };
+  };
 
   // --- CRUD Handlers ---
   const handleActionClick = (task: Task) => {
@@ -330,7 +374,9 @@ export default function TaskManagementSystem() {
     );
 
   const tasks = tasksData?.tasks?.results || [];
+
   const totalTasks = tasksData?.tasks?.count || 0;
+  const totalPages = Math.ceil(totalTasks / itemsPerPage);
   const stats = tasksData?.stats || {
     all_tasks: 0,
     overdue: 0,
@@ -424,24 +470,41 @@ export default function TaskManagementSystem() {
           <table className="w-full text-left">
             <thead className="bg-[#161618] border-b border-[#2a2a2d]">
               <tr className="text-[10px] uppercase text-gray-500 font-bold">
-                <th className="px-6 py-4">Task</th>
+                <th className="px-6 py-4">Task Name</th>
                 <th className="px-6 py-4">Created At</th>
                 <th className="px-6 py-4">Due Date</th>
-                <th className="px-6 py-4">Employee</th>
+                {/* <th className="px-6 py-4">Assigned To</th> */}
                 <th className="px-6 py-4">Location</th>
+                <th className="px-6 py-4 text-center">Pending</th>
+                <th className="px-6 py-4 text-center">Awaited Review</th>
+                <th className="px-6 py-4 text-center">Approved</th>
+                <th className="px-6 py-4 text-center">Declined</th>
+                <th className="px-6 py-4 text-center">Assigned Count</th>
                 <th className="px-6 py-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e1e20]">
-              {tasks.map((apiTask) => {
+              {tasks.map((apiTask,) => {
                 const task = mapApiTaskToDisplay(apiTask);
+
                 const displayStatus = mapStatusToDisplay(task.status);
+                const counts = task.status_counts || {
+                  pending: 0,
+                  awaiting_review: 0,
+                  approved: 0,
+                  rejected: 0,
+                  overdue: 0,
+                };
+                const totalAssigned = task.assignments?.length || 0;
+                const declined = counts.rejected || 0;
+                const awaited = counts.awaiting_review || 0;
+
                 return (
                   <tr
                     key={task.id}
                     className="hover:bg-white/[0.02] transition-colors group"
                   >
-                    <td className="px-6 py-5 min-w-[300px]">
+                    <td className="px-6 py-5 min-w-[200px]">
                       <div className="flex gap-4">
                         <StatusIcon status={displayStatus} />
                         <div>
@@ -449,7 +512,7 @@ export default function TaskManagementSystem() {
                             <span className="font-semibold text-sm text-white">
                               {task.title}
                             </span>
-                            <StatusBadge status={displayStatus} />
+                            {/* <StatusBadge status={displayStatus} /> */}
                           </div>
                           <p className="text-xs text-gray-500 line-clamp-1">
                             {task.description}
@@ -467,15 +530,37 @@ export default function TaskManagementSystem() {
                     >
                       {task.due_date}
                     </td>
-                    <td className="px-6 py-5">
-                      <div className="text-sm font-medium">
-                        {task.assigned_to_name}
+                    {/* <td className="px-6 py-5">
+                      <div className="text-sm text-center font-medium">
+                        {task.assignments?.length}
                       </div>
-                      <div className="text-[10px] text-gray-600 uppercase font-bold">
-                        {task.assigned_to_role}
-                      </div>
-                    </td>
+                    </td> */}
                     <td className="px-6 py-5 text-sm">{task.location_name}</td>
+                    <td className="px-6 py-5 text-center text-sm font-medium">
+                      <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
+                        {counts.pending || 0}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-center text-sm font-medium">
+                      <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-500 border border-purple-500/20">
+                        {awaited}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-center text-sm font-medium">
+                      <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
+                        {counts.approved || 0}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-center text-sm font-medium">
+                      <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-500 border border-red-500/20">
+                        {declined}
+                      </span>
+                    </td>
+                    <td className="px-6 py-5 text-center text-sm font-medium">
+                      <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                        {totalAssigned}
+                      </span>
+                    </td>
                     <td className="px-6 py-5">
                       <div className="flex justify-center items-center gap-2">
                         {task.status === "pending" ? (
@@ -515,20 +600,45 @@ export default function TaskManagementSystem() {
       {/* Pagination */}
       <div className="flex items-center justify-between gap-4 text-sm text-gray-500">
         <p>
-          Showing {tasks.length} of {totalTasks} results
+          Showing {(currentPage - 1) * itemsPerPage + 1}-
+          {Math.min(currentPage * itemsPerPage, totalTasks)} of {totalTasks}{" "}
+          results
         </p>
+
         <div className="flex items-center gap-2">
+          {/* Previous */}
           <button
-            disabled={currentPage === 1}
+            disabled={!tasksData?.tasks?.previous}
             onClick={() => setCurrentPage((p) => p - 1)}
-            className="p-2 border border-[#2a2a2d] rounded-lg disabled:opacity-20"
+            className="p-2 border border-[#2a2a2d] rounded-lg disabled:opacity-30"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
+
+          {/* Page Numbers */}
+          {Array.from({ length: totalPages }, (_, index) => {
+            const page = index + 1;
+
+            return (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`w-9 h-9 rounded-lg border transition-colors ${
+                  currentPage === page
+                    ? "bg-[#c4a47c] text-black border-[#c4a47c]"
+                    : "border-[#2a2a2d] text-gray-400 hover:border-[#c4a47c] hover:text-white"
+                }`}
+              >
+                {page}
+              </button>
+            );
+          })}
+
+          {/* Next */}
           <button
-            disabled={currentPage >= Math.ceil(totalTasks / itemsPerPage)}
+            disabled={!tasksData?.tasks?.next}
             onClick={() => setCurrentPage((p) => p + 1)}
-            className="p-2 border border-[#2a2a2d] rounded-lg disabled:opacity-20"
+            className="p-2 border border-[#2a2a2d] rounded-lg disabled:opacity-30"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -637,7 +747,7 @@ function StatusIcon({ status }: { status: DisplayStatus }) {
   const styles: any = {
     Approved: "text-green-500 bg-green-500/10",
     Overdue: "text-red-500 bg-red-500/10",
-    "Awaiting Review": "text-yellow-500 bg-yellow-500/10",
+    "Awaiting Review": "text-purple-500 bg-purple-500/10",
     Pending: "text-blue-500 bg-blue-500/10",
     Rejected: "text-red-500 bg-red-500/10",
   };
@@ -654,7 +764,7 @@ function StatusBadge({ status }: { status: DisplayStatus }) {
   const styles: any = {
     Approved: "text-green-500 bg-green-500/10",
     Overdue: "text-red-500 bg-red-500/10",
-    "Awaiting Review": "text-yellow-500 bg-yellow-500/10",
+    "Awaiting Review": "text-purple-500 bg-purple-500/10",
     Pending: "text-blue-500 bg-blue-500/10",
     Rejected: "text-red-500 bg-red-500/10",
   };

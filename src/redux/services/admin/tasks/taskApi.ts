@@ -10,7 +10,7 @@ export interface TaskUser {
   location_name?: string;
 }
 
-interface TaskUserDetails {
+export interface TaskAssignmentEmployee {
   id: number;
   name: string;
   email: string;
@@ -18,15 +18,9 @@ interface TaskUserDetails {
   role_display: string;
 }
 
-export interface TaskDetails {
+export interface TaskAssignment {
   id: number;
-  title: string;
-  description: string;
-  location: number;
-  location_name: string;
-  assigned_to: TaskUserDetails;
-  created_by: TaskUser;
-  due_date: string;
+  employee: TaskAssignmentEmployee;
   status:
     | "pending"
     | "completed"
@@ -35,53 +29,57 @@ export interface TaskDetails {
     | "overdue"
     | "awaiting_review";
   status_display: string;
-  is_recurring: boolean;
-  frequency: "none" | "today" | "weekly" | "monthly" | "yearly";
-  requires_photo: boolean;
+  is_fired: boolean;
+  can_fire: boolean;
   photo_url: string | null;
-  completed_by: TaskUser | null;
   completed_at: string | null;
   approved_by: TaskUser | null;
   approved_at: string | null;
   rejected_by: TaskUser | null;
   rejected_at: string | null;
   rejection_reason: string | null;
-  is_fired: boolean;
-  can_fire: boolean;
   created_at: string;
-  updated_at: string;
 }
 
-export interface Task {
+export interface TaskStatusCounts {
+  pending: number;
+  awaiting_review: number;
+  approved: number;
+  rejected: number;
+  overdue: number;
+}
+
+export interface TaskDetails {
   id: number;
   title: string;
   description: string;
   location: number;
   location_name: string;
-  assigned_to: number[];
-  assigned_to_name: string;
-  assigned_to_email: string;
-  assigned_to_role: string;
   due_date: string;
-  status:
-    | "pending"
-    | "completed"
-    | "approved"
-    | "rejected"
-    | "overdue"
-    | "awaiting_review";
   is_recurring: boolean;
   frequency: "none" | "today" | "weekly" | "monthly" | "yearly";
   requires_photo: boolean;
-  photo_url?: string | null;
-  completed_by: number | null;
-  completed_by_name: string | null;
-  completed_by_role: string | null;
-  is_fired: boolean;
-  can_fire: boolean;
+  created_by: TaskUser;
   created_at: string;
-  updated_at?: string;
-  rejection_reason?: string | null;
+  updated_at: string;
+  assignments: TaskAssignment[];
+  status_counts: TaskStatusCounts;
+}
+
+export interface Task {
+  task_id: number;
+  title: string;
+  description: string;
+  location: number;
+  location_name: string;
+  due_date: string;
+  is_recurring: boolean;
+  frequency: "none" | "today" | "weekly" | "monthly" | "yearly";
+  requires_photo: boolean;
+  created_by: TaskUser;
+  created_at: string;
+  assignments: TaskAssignment[];
+  status_counts: TaskStatusCounts;
 }
 
 interface TaskStats {
@@ -202,10 +200,14 @@ export const taskApi = baseApi.injectEndpoints({
     }),
 
     // POST: Approve Task
-    approveTask: builder.mutation<{ message: string }, number>({
-      query: (id) => ({
-        url: `/admin/tasks/${id}/approve/`,
+    approveTask: builder.mutation<
+      { message: string },
+      { taskId: number; assignmentId: number }
+    >({
+      query: (body) => ({
+        url: `/admin/tasks/${body.taskId}/approve/`,
         method: "POST",
+        body: { assignment_id: body.assignmentId },
       }),
       invalidatesTags: (result, error, id) => ["Tasks", { type: "Tasks", id }],
     }),
@@ -213,12 +215,12 @@ export const taskApi = baseApi.injectEndpoints({
     // POST: Reject Task
     rejectTask: builder.mutation<
       { message: string },
-      { id: number; rejection_reason: string }
+      { id: number; rejection_reason: string, assignmentId: number }
     >({
-      query: ({ id, rejection_reason }) => ({
+      query: ({ id, rejection_reason, assignmentId }) => ({
         url: `/admin/tasks/${id}/reject/`,
         method: "POST",
-        body: { rejection_reason },
+        body: { rejection_reason, assignment_id: assignmentId },
       }),
       invalidatesTags: (result, error, { id }) => [
         "Tasks",

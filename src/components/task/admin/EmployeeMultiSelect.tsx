@@ -3,15 +3,19 @@
 import { useState, useEffect, useMemo } from "react";
 import { ChevronDown, Search, X, Check, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LocationEmployee } from "@/redux/services/admin/tasks/taskApi";
+import {
+  LocationEmployee,
+  useGetEmployeesForDropdownQuery,
+} from "@/redux/services/admin/tasks/taskApi";
 
 interface EmployeeMultiSelectProps {
   employees?: LocationEmployee[];
-  selectedIds?: number[];
+  selectedIds?: Array<number | { id: number } | string>;
   onChange: (ids: number[]) => void;
   isLoading?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  locationId?: number;
 }
 
 export function EmployeeMultiSelect({
@@ -21,20 +25,50 @@ export function EmployeeMultiSelect({
   isLoading,
   disabled,
   placeholder = "Select a store first",
+  locationId,
 }: EmployeeMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
 
+  // Normalize incoming selectedIds to an array of numbers to avoid type mismatches
+  const normalizedSelectedIds = useMemo(() => {
+    if (!Array.isArray(selectedIds)) return [];
+    return selectedIds
+      .map((item) => {
+        if (typeof item === "number") return item;
+        if (typeof item === "string") return Number(item);
+        if (item && typeof item === "object" && "id" in item)
+          return Number((item as any).id);
+        return NaN;
+      })
+      .filter((n) => !Number.isNaN(n)) as number[];
+  }, [selectedIds]);
+
+  // If parent didn't provide employees but passed locationId, we'll fetch inside the dialog
+
+  // Fetch employees at top-level when parent didn't pass them
+  const {
+    data: topFetchedEmployeesResp,
+    isLoading: isLoadingTopFetched,
+  } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
+    skip: !locationId || (employees && employees.length > 0),
+  });
+
+  const employeesSource = (employees && employees.length > 0)
+    ? employees
+    : topFetchedEmployeesResp?.employees || [];
+
   const selectedEmployees = useMemo(
-    () => employees.filter((emp) => selectedIds.includes(emp.id)),
-    [employees, selectedIds],
+    () => employeesSource.filter((emp) => normalizedSelectedIds.includes(emp.id)),
+    [employeesSource, normalizedSelectedIds],
   );
 
   const getInitials = (emp: LocationEmployee) =>
     `${emp.first_name[0] || ""}${emp.last_name[0] || ""}`.toUpperCase();
 
   const removeEmployee = (id: number) => {
-    onChange(selectedIds.filter((i) => i !== id));
+    onChange(normalizedSelectedIds.filter((i) => i !== id));
   };
+
 
   return (
     <div>
@@ -88,8 +122,9 @@ export function EmployeeMultiSelect({
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         employees={employees}
-        selectedIds={selectedIds}
+        selectedIds={normalizedSelectedIds}
         onChange={onChange}
+        locationId={locationId}
       />
     </div>
   );
@@ -103,6 +138,7 @@ interface EmployeeSelectDialogProps {
   employees: LocationEmployee[];
   selectedIds: number[];
   onChange: (ids: number[]) => void;
+  locationId?: number;
 }
 
 function EmployeeSelectDialog({
@@ -111,34 +147,45 @@ function EmployeeSelectDialog({
   employees,
   selectedIds,
   onChange,
+  locationId,
 }: EmployeeSelectDialogProps) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [draftIds, setDraftIds] = useState<number[]>(selectedIds);
 
+  // If parent didn't pass employees, fetch by locationId
+  const {
+    data: fetchedEmployeesResp,
+    isLoading: isLoadingFetchedEmployees,
+  } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
+    skip: !locationId || (employees && employees.length > 0),
+  });
+
+  const dialogEmployees = employees && employees.length ? employees : (fetchedEmployeesResp?.employees || []);
+
   // Sync draft selection + reset filters whenever the dialog opens
   useEffect(() => {
     if (isOpen) {
-      setDraftIds(selectedIds);
+      setDraftIds(selectedIds || []);
       setSearch("");
       setRoleFilter("All");
     }
   }, [isOpen, selectedIds]);
 
   const roles = useMemo(() => {
-    const unique = Array.from(new Set(employees.map((e) => e.role_display)));
+    const unique = Array.from(new Set(dialogEmployees.map((e) => e.role_display)));
     return ["All", ...unique];
-  }, [employees]);
+  }, [dialogEmployees]);
 
   const filteredEmployees = useMemo(() => {
-    return employees.filter((emp) => {
+    return dialogEmployees.filter((emp) => {
       const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
       const matchesSearch = fullName.includes(search.toLowerCase());
       const matchesRole =
         roleFilter === "All" || emp.role_display === roleFilter;
       return matchesSearch && matchesRole;
     });
-  }, [employees, search, roleFilter]);
+  }, [dialogEmployees, search, roleFilter]);
 
   if (!isOpen) return null;
 

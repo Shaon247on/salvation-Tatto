@@ -29,6 +29,8 @@ export const TaskActionModal = ({
 }: TaskActionModalProps) => {
   const isEditMode = !!initialData;
 
+  console.log("Editable tast:", initialData);
+
   // Get token from Redux
   const token = useAppSelector(selectCurrentToken);
 
@@ -61,7 +63,22 @@ export const TaskActionModal = ({
         description: initialData?.description || "",
         location: initialData?.location || "",
         locationId: initialData?.locationId || 0,
-        assignedToIds: initialData?.assignedToIds || [],
+
+        // initialData.assignedToIds can be an array of objects {id,name} or numbers
+        assignedToIds: Array.isArray(initialData?.assignedToIds)
+          ? initialData.assignedToIds.map((a: any) =>
+              typeof a === "number" ? a : a?.id ? Number(a.id) : NaN,
+            ).filter((n: number) => !Number.isNaN(n))
+          : initialData?.assignedToIds
+          ? [
+              typeof initialData.assignedToIds === "number"
+                ? initialData.assignedToIds
+                : initialData.assignedToIds.id
+                ? Number(initialData.assignedToIds.id)
+                : NaN,
+            ].filter((n) => !Number.isNaN(n))
+          : [],
+
         dueDate: initialData?.dueDate || "",
         isRecurring: initialData?.isRecurring || false,
         frequency: initialData?.frequency || "daily",
@@ -236,6 +253,7 @@ export const TaskActionModal = ({
               }
               isLoading={isLoadingEmployees}
               disabled={isLoading || !formData.locationId}
+              locationId={formData.locationId}
             />
           </div>
 
