@@ -12,6 +12,7 @@ import {
   useAddUserMutation,
   useUpdateUserMutation,
   useDeleteUserMutation,
+  UserListItem,
 } from "@/redux/services/admin/users/userService";
 
 // ... (AVATAR_COLORS, formatDate, convertTo24Hour, transformScheduleToAPI, getInitials, mapApiUserToUIUser stay exactly the same)
@@ -29,12 +30,23 @@ const getAvatarColor = (index: number) =>
   AVATAR_COLORS[index % AVATAR_COLORS.length];
 
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  if (!dateString) return "N/A";
+  
+  // Parse YYYY-MM-DD format
+  const parts = dateString.split('-');
+  if (parts.length !== 3) return "N/A";
+  
+  const [year, month, day] = parts;
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    return "N/A";
+  }
+  
+  // Format as "Mon DD, YYYY" (e.g., "Jun 26, 2026")
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
 };
 
 const convertTo24Hour = (time12: string): string => {
@@ -62,13 +74,13 @@ const getInitials = (firstName: string, lastName: string): string => {
   return first + last;
 };
 
-const mapApiUserToUIUser = (user: any, index: number) => ({
+const mapApiUserToUIUser = (user: UserListItem, index: number) => ({
   id: user.id,
   name: `${user.first_name} ${user.last_name}`,
   handle: `@${user.username}`,
   role: user.role_display || user.role,
   location: user.location_name,
-  joined: formatDate(user.date_joined),
+  joined: formatDate(user.joined),
   status: user.is_active ? "Active" : "Inactive",
   initials: getInitials(user.first_name, user.last_name),
   avatarColor: getAvatarColor(index),
