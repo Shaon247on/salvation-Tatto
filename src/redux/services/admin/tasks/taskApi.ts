@@ -101,17 +101,30 @@ interface TaskListResponse {
 
 export interface LocationEmployee {
   id: number;
-  first_name: string;
-  last_name: string;
+  name: string;
   email: string;
-  username: string;
   role: string;
   role_display: string;
+  location_id?: number;
+  location_name?: string;
+  profile_photo?: string | null;
 }
 
-interface LocationEmployeesResponse {
-  location: string;
+export interface LocationFilterOption {
+  id: number;
+  name: string;
+}
+
+export interface LocationEmployeesResponse {
   employees: LocationEmployee[];
+  employees_meta: {
+    count: number;
+    next: string | null;
+    previous: string | null;
+  };
+  filter_options?: {
+    locations: LocationFilterOption[];
+  };
 }
 
 interface TaskQueryParams {
@@ -138,10 +151,24 @@ interface FireUserRequest {
   fire_reason: string;
 }
 
+interface Location {
+  id: number;
+  name: string;
+  street_address: string;
+  city_state: string;
+  status: string;
+  staff_count: number;
+}
+
+interface LocationResponse {
+  locations: Location[];
+}
+
 // --- API Slice ---
 
 export const taskApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
+    // --- Super Admin Endpoints ---
     // GET: List tasks with advanced filtering and pagination
     getTasks: builder.query<TaskListResponse, TaskQueryParams>({
       query: (params) => ({
@@ -174,11 +201,8 @@ export const taskApi = baseApi.injectEndpoints({
       invalidatesTags: ["Tasks"],
     }),
 
-    // PATCH: Edit Task (image_2e0f54.png)
-    editTask: builder.mutation<
-      Task,
-      { id: number; data: Partial<TaskRequest> }
-    >({
+    // PATCH: Edit Task
+    editTask: builder.mutation<Task, { id: number; data: Partial<TaskRequest> }>({
       query: ({ id, data }) => ({
         url: `/admin/tasks/${id}/`,
         method: "PATCH",
@@ -190,7 +214,7 @@ export const taskApi = baseApi.injectEndpoints({
       ],
     }),
 
-    // DELETE: Remove Task (image_2e12fa.png)
+    // DELETE: Remove Task
     deleteTask: builder.mutation<{ message: string }, number>({
       query: (id) => ({
         url: `/admin/tasks/${id}/`,
@@ -199,20 +223,20 @@ export const taskApi = baseApi.injectEndpoints({
       invalidatesTags: ["Tasks"],
     }),
 
-    // POST: Approve Task
+    // POST: Approve Task (Individual Assignment)
     approveTask: builder.mutation<
       { message: string },
       { taskId: number; assignmentId: number }
     >({
-      query: (body) => ({
-        url: `/admin/tasks/${body.taskId}/approve/`,
+      query: ({ taskId, assignmentId }) => ({
+        url: `/admin/tasks/${taskId}/approve/`,
         method: "POST",
-        body: { assignment_id: body.assignmentId },
+        body: { assignment_id: assignmentId },
       }),
-      invalidatesTags: (result, error, id) => ["Tasks", { type: "Tasks", id }],
+      invalidatesTags: (result, error, { taskId }) => ["Tasks", { type: "Tasks", id: taskId }],
     }),
 
-    // POST: Reject Task
+    // POST: Reject Task (Individual Assignment)
     rejectTask: builder.mutation<
       { message: string },
       { id: number; rejection_reason: string; assignmentId: number }
@@ -238,7 +262,7 @@ export const taskApi = baseApi.injectEndpoints({
       invalidatesTags: ["Tasks"],
     }),
 
-    // GET: Employees for assignment dropdown
+    // GET: Employees for assignment dropdown (Super Admin)
     getEmployeesForDropdown: builder.query<LocationEmployeesResponse, number>({
       query: (locationId) => ({
         url: `/admin/locations/${locationId}/employees/`,
@@ -248,8 +272,10 @@ export const taskApi = baseApi.injectEndpoints({
         { type: "Users", id: `LOCATION_${locationId}` },
       ],
     }),
+
+    // --- District Manager Endpoints ---
     getTasksByDistrictManager: builder.query<
-      TaskResponse,
+      TaskListResponse,
       { location?: number; search?: string; page?: number }
     >({
       query: (params) => ({
@@ -259,22 +285,27 @@ export const taskApi = baseApi.injectEndpoints({
       providesTags: ["Tasks"],
     }),
 
+    // GET: Locations for District Manager
     getLocationsByDistrictManager: builder.query<LocationResponse, void>({
       query: () => "/admin/district-manager/locations/",
       providesTags: ["Locations"],
     }),
 
+    // GET: Employees by Location for District Manager (with location as query param)
     getEmployeesByLocationByDistrictManager: builder.query<
       LocationEmployeesResponse,
       number
     >({
-      query: (locationId) =>
-        `/admin/district-manager/locations/${locationId}/employees/`,
+      query: (locationId) => ({
+        url: "/admin/district-manager/employees/",
+        params: { location: locationId },
+      }),
       providesTags: (result, error, locationId) => [
         { type: "Users", id: `LOCATION_${locationId}` },
       ],
     }),
 
+    // POST: Create Task for District Manager
     createTaskByDistrictManager: builder.mutation<any, Partial<Task>>({
       query: (body) => ({
         url: "/admin/district-manager/tasks/",
@@ -284,6 +315,7 @@ export const taskApi = baseApi.injectEndpoints({
       invalidatesTags: ["Tasks"],
     }),
 
+    // PATCH: Update Task for District Manager
     updateTaskByDistrictManager: builder.mutation<
       any,
       { id: number; body: Partial<Task> }
@@ -296,6 +328,7 @@ export const taskApi = baseApi.injectEndpoints({
       invalidatesTags: ["Tasks"],
     }),
 
+    // DELETE: Delete Task for District Manager
     deleteTaskByDistrictManager: builder.mutation<{ message: string }, number>({
       query: (id) => ({
         url: `/admin/district-manager/tasks/${id}/`,
@@ -308,17 +341,18 @@ export const taskApi = baseApi.injectEndpoints({
 });
 
 export const {
+  // Super Admin Hooks
   useGetTasksQuery,
   useGetTaskDetailsQuery,
   useCreateTaskMutation,
-  useEditTaskMutation, // Exported Edit Mutation
-  useDeleteTaskMutation, // Exported Delete Mutation
+  useEditTaskMutation,
+  useDeleteTaskMutation,
   useApproveTaskMutation,
   useRejectTaskMutation,
   useFireUserMutation,
   useGetEmployeesForDropdownQuery,
 
-   // District Manager Hooks
+  // District Manager Hooks
   useGetTasksByDistrictManagerQuery,
   useGetLocationsByDistrictManagerQuery,
   useGetEmployeesByLocationByDistrictManagerQuery,

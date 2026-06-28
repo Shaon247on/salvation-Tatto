@@ -7,9 +7,13 @@ import { useState, useEffect } from "react";
 import { X, ChevronDown, RotateCcw, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/redux/store";
-import { selectCurrentToken } from "@/redux/features/auth/authSlice";
+import { selectCurrentToken, selectUserRole } from "@/redux/features/auth/authSlice";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
-import { useGetEmployeesForDropdownQuery } from "@/redux/services/admin/tasks/taskApi";
+import { 
+  useGetEmployeesForDropdownQuery,
+  useGetLocationsByDistrictManagerQuery,
+  useGetEmployeesByLocationByDistrictManagerQuery
+} from "@/redux/services/admin/tasks/taskApi";
 import { EmployeeMultiSelect } from "./EmployeeMultiSelect";
 
 interface TaskActionModalProps {
@@ -28,20 +32,15 @@ export const TaskActionModal = ({
   isLoading = false,
 }: TaskActionModalProps) => {
   const isEditMode = !!initialData;
-
-  console.log("Editable tast:", initialData);
-
-  // Get token from Redux
   const token = useAppSelector(selectCurrentToken);
+  const userRole = useAppSelector(selectUserRole);
+  console.log("the main data:",initialData)
+  // Determine if user is district manager
+  const isDistrictManager = userRole === "district_manager";
 
-  // Fetch active locations from API - skip if no token
-  const { data: locationsResponse } = useGetLocationsQuery(undefined, {
-    skip: !token,
-  });
-
-  const activeLocations =
-    locationsResponse?.locations?.filter((loc) => loc.status === "active") ||
-    [];
+  console.log("Editable task:", initialData);
+  console.log("User Role:", userRole);
+  console.log("Is District Manager:", isDistrictManager);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -54,6 +53,31 @@ export const TaskActionModal = ({
     frequency: "daily",
     requirePhoto: false,
   });
+
+  // --- CRITICAL FIX: Always call all hooks unconditionally ---
+
+  // Fetch locations based on role - Always call both hooks
+  const {
+    data: dmLocationsResponse,
+    isLoading: dmLocationsLoading,
+  } = useGetLocationsByDistrictManagerQuery(undefined, { 
+    skip: !isDistrictManager || !token 
+  });
+
+  const {
+    data: adminLocationsResponse,
+    isLoading: adminLocationsLoading,
+  } = useGetLocationsQuery(undefined, { 
+    skip: isDistrictManager || !token 
+  });
+
+  // Determine which locations data to use
+  const locationsResponse = isDistrictManager ? dmLocationsResponse : adminLocationsResponse;
+  const locationsLoading = isDistrictManager ? dmLocationsLoading : adminLocationsLoading;
+
+  const activeLocations = locationsResponse?.locations?.filter((loc: any) => 
+    loc.status === "active" || !loc.status // District manager locations might not have status field
+  ) || [];
 
   // --- CRITICAL FIX: Sync initialData to local state when modal opens ---
   useEffect(() => {
@@ -87,11 +111,24 @@ export const TaskActionModal = ({
     }
   }, [initialData, isOpen]);
 
-  // Fetch employees for selected location using locationId
-  const { data: employeesResponse, isLoading: isLoadingEmployees } =
-    useGetEmployeesForDropdownQuery(formData.locationId, {
-      skip: !formData.locationId || !isOpen,
-    });
+  // Fetch employees for selected location based on role - Always call both hooks
+  const {
+    data: dmEmployeesResponse,
+    isLoading: dmEmployeesLoading,
+  } = useGetEmployeesByLocationByDistrictManagerQuery(formData.locationId, {
+    skip: !isDistrictManager || !formData.locationId || !isOpen,
+  });
+
+  const {
+    data: adminEmployeesResponse,
+    isLoading: adminEmployeesLoading,
+  } = useGetEmployeesForDropdownQuery(formData.locationId, {
+    skip: isDistrictManager || !formData.locationId || !isOpen,
+  });
+
+  // Determine which employees data to use
+  const employeesResponse = isDistrictManager ? dmEmployeesResponse : adminEmployeesResponse;
+  const isLoadingEmployees = isDistrictManager ? dmEmployeesLoading : adminEmployeesLoading;
 
   const employees = employeesResponse?.employees || [];
 
@@ -193,7 +230,7 @@ export const TaskActionModal = ({
                 onChange={(e) => {
                   const selectedName = e.target.value;
                   const selectedLoc = activeLocations.find(
-                    (loc) => loc.name === selectedName,
+                    (loc: any) => loc.name === selectedName,
                   );
                   setFormData({
                     ...formData,
@@ -202,11 +239,11 @@ export const TaskActionModal = ({
                     assignedToIds: [],
                   });
                 }}
-                disabled={isLoading}
+                disabled={isLoading || locationsLoading}
                 className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white appearance-none outline-none cursor-pointer pr-10 disabled:opacity-50"
               >
                 <option value="">Select a location...</option>
-                {activeLocations.map((location) => (
+                {activeLocations.map((location: any) => (
                   <option key={location.id} value={location.name}>
                     {location.name}
                   </option>
@@ -254,6 +291,7 @@ export const TaskActionModal = ({
               isLoading={isLoadingEmployees}
               disabled={isLoading || !formData.locationId}
               locationId={formData.locationId}
+              isDistrictManager={isDistrictManager}
             />
           </div>
 

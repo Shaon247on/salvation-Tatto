@@ -6,7 +6,10 @@ import { cn } from "@/lib/utils";
 import {
   LocationEmployee,
   useGetEmployeesForDropdownQuery,
+  useGetEmployeesByLocationByDistrictManagerQuery,
 } from "@/redux/services/admin/tasks/taskApi";
+import { useAppSelector } from "@/redux/store";
+import { selectUserRole } from "@/redux/features/auth/authSlice";
 
 interface EmployeeMultiSelectProps {
   employees?: LocationEmployee[];
@@ -28,8 +31,12 @@ export function EmployeeMultiSelect({
   locationId,
 }: EmployeeMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const userRole = useAppSelector(selectUserRole);
+  const isDistrictManager = userRole === "district_manager";
 
-  // Normalize incoming selectedIds to an array of numbers to avoid type mismatches
+  console.log("the user:", userRole);
+
+  // Normalize incoming selectedIds to an array of numbers
   const normalizedSelectedIds = useMemo(() => {
     if (!Array.isArray(selectedIds)) return [];
     return selectedIds
@@ -43,16 +50,28 @@ export function EmployeeMultiSelect({
       .filter((n) => !Number.isNaN(n)) as number[];
   }, [selectedIds]);
 
-  // If parent didn't provide employees but passed locationId, we'll fetch inside the dialog
-
-  // Fetch employees at top-level when parent didn't pass them
+  // Always call both hooks (Rules of Hooks)
   const {
-    data: topFetchedEmployeesResp,
-    isLoading: isLoadingTopFetched,
-  } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
-    skip: !locationId || (employees && employees.length > 0),
+    data: dmEmployeesResp,
+    isLoading: isLoadingDM,
+  } = useGetEmployeesByLocationByDistrictManagerQuery(locationId ?? 0, {
+    skip: !isDistrictManager || !locationId || (employees && employees.length > 0),
   });
 
+  const {
+    data: adminEmployeesResp,
+    isLoading: isLoadingAdmin,
+  } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
+    skip: isDistrictManager || !locationId || (employees && employees.length > 0),
+  });
+
+  // Determine which data to use based on role
+  const topFetchedEmployeesResp = isDistrictManager ? dmEmployeesResp : adminEmployeesResp;
+  const isLoadingTopFetched = isDistrictManager ? isLoadingDM : isLoadingAdmin;
+
+  console.log("the fetched employees:", topFetchedEmployeesResp);
+
+  // Handle the new response structure - employees is directly in the response
   const employeesSource = (employees && employees.length > 0)
     ? employees
     : topFetchedEmployeesResp?.employees || [];
@@ -62,13 +81,20 @@ export function EmployeeMultiSelect({
     [employeesSource, normalizedSelectedIds],
   );
 
-  const getInitials = (emp: LocationEmployee) =>
-    `${emp.first_name[0] || ""}${emp.last_name[0] || ""}`.toUpperCase();
+  // Simple initials function using the name field directly
+  const getInitials = (emp: LocationEmployee) => {
+    if (!emp || !emp.name) return "?";
+    
+    const nameParts = emp.name.split(' ');
+    if (nameParts.length >= 2) {
+      return `${nameParts[0].charAt(0)}${nameParts[1].charAt(0)}`.toUpperCase();
+    }
+    return nameParts[0].charAt(0).toUpperCase() || "?";
+  };
 
   const removeEmployee = (id: number) => {
     onChange(normalizedSelectedIds.filter((i) => i !== id));
   };
-
 
   return (
     <div>
@@ -105,7 +131,7 @@ export function EmployeeMultiSelect({
               <span className="w-5 h-5 rounded-full bg-[#A39171]/20 text-[#c4a47c] flex items-center justify-center text-[9px] font-bold shrink-0">
                 {getInitials(emp)}
               </span>
-              {emp.first_name} {emp.last_name}
+              {emp.name}
               <button
                 type="button"
                 onClick={() => removeEmployee(emp.id)}
@@ -125,6 +151,7 @@ export function EmployeeMultiSelect({
         selectedIds={normalizedSelectedIds}
         onChange={onChange}
         locationId={locationId}
+        isDistrictManager={isDistrictManager}
       />
     </div>
   );
@@ -139,6 +166,7 @@ interface EmployeeSelectDialogProps {
   selectedIds: number[];
   onChange: (ids: number[]) => void;
   locationId?: number;
+  isDistrictManager?: boolean;
 }
 
 function EmployeeSelectDialog({
@@ -148,20 +176,35 @@ function EmployeeSelectDialog({
   selectedIds,
   onChange,
   locationId,
+  isDistrictManager = false,
 }: EmployeeSelectDialogProps) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [draftIds, setDraftIds] = useState<number[]>(selectedIds);
 
-  // If parent didn't pass employees, fetch by locationId
+  // Always call both hooks (Rules of Hooks)
   const {
-    data: fetchedEmployeesResp,
-    isLoading: isLoadingFetchedEmployees,
-  } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
-    skip: !locationId || (employees && employees.length > 0),
+    data: dmEmployeesResp,
+    isLoading: isLoadingDM,
+  } = useGetEmployeesByLocationByDistrictManagerQuery(locationId ?? 0, {
+    skip: !isDistrictManager || !locationId || (employees && employees.length > 0),
   });
 
-  const dialogEmployees = employees && employees.length ? employees : (fetchedEmployeesResp?.employees || []);
+  const {
+    data: adminEmployeesResp,
+    isLoading: isLoadingAdmin,
+  } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
+    skip: isDistrictManager || !locationId || (employees && employees.length > 0),
+  });
+
+  // Determine which data to use based on role
+  const fetchedEmployeesResp = isDistrictManager ? dmEmployeesResp : adminEmployeesResp;
+  const isLoadingFetchedEmployees = isDistrictManager ? isLoadingDM : isLoadingAdmin;
+
+  // Handle the new response structure - employees is directly in the response
+  const dialogEmployees = employees && employees.length 
+    ? employees 
+    : (fetchedEmployeesResp?.employees || []);
 
   // Sync draft selection + reset filters whenever the dialog opens
   useEffect(() => {
@@ -173,14 +216,14 @@ function EmployeeSelectDialog({
   }, [isOpen, selectedIds]);
 
   const roles = useMemo(() => {
-    const unique = Array.from(new Set(dialogEmployees.map((e) => e.role_display)));
+    const unique = Array.from(new Set(dialogEmployees.map((e) => e.role_display).filter(Boolean)));
     return ["All", ...unique];
   }, [dialogEmployees]);
 
   const filteredEmployees = useMemo(() => {
     return dialogEmployees.filter((emp) => {
-      const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
-      const matchesSearch = fullName.includes(search.toLowerCase());
+      const fullName = emp?.name?.toLowerCase();
+      const matchesSearch = fullName?.includes(search.toLowerCase());
       const matchesRole =
         roleFilter === "All" || emp.role_display === roleFilter;
       return matchesSearch && matchesRole;
@@ -205,8 +248,16 @@ function EmployeeSelectDialog({
     setDraftIds((prev) => prev.filter((id) => !filteredIdSet.has(id)));
   };
 
-  const getInitials = (emp: LocationEmployee) =>
-    `${emp.first_name[0] || ""}${emp.last_name[0] || ""}`.toUpperCase();
+  // Simple initials function using the name field directly
+  const getInitials = (emp: LocationEmployee) => {
+    if (!emp || !emp.name) return "?";
+    
+    const nameParts = emp.name.split(' ');
+    if (nameParts.length >= 2) {
+      return `${nameParts[0].charAt(0)}${nameParts[1].charAt(0)}`.toUpperCase();
+    }
+    return nameParts[0].charAt(0).toUpperCase() || "?";
+  };
 
   const handleApply = () => {
     onChange(draftIds);
@@ -331,10 +382,10 @@ function EmployeeSelectDialog({
                   </span>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-white truncate">
-                      {emp.first_name} {emp.last_name}
+                      {emp.name}
                     </p>
                     <p className="text-[10px] text-gray-500 uppercase font-bold">
-                      {emp.role_display}
+                      {emp.role_display || emp.role || "Employee"}
                     </p>
                   </div>
                 </button>

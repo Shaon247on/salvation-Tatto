@@ -32,10 +32,8 @@ import {
   useApproveTaskMutation,
   useRejectTaskMutation,
   useFireUserMutation,
-  useGetEmployeesForDropdownQuery,
   useGetTasksByDistrictManagerQuery,
   useGetLocationsByDistrictManagerQuery,
-  useGetEmployeesByLocationByDistrictManagerQuery,
   useCreateTaskByDistrictManagerMutation,
   useUpdateTaskByDistrictManagerMutation,
   useDeleteTaskByDistrictManagerMutation,
@@ -159,44 +157,64 @@ export default function TaskManagementSystem() {
 
   const itemsPerPage = 15;
 
-  // --- API Queries based on role ---
+  // --- API Queries based on role - Always call both hooks unconditionally ---
   const {
-    data: tasksData,
-    isLoading,
-    isError,
-    refetch,
-  } = isDistrictManager
-    ? useGetTasksByDistrictManagerQuery(
-        {
-          page: currentPage,
-          location: locationFilterId ?? undefined,
-          search,
-        },
-        { skip: !token },
-      )
-    : useGetTasksQuery(
-        {
-          page: currentPage,
-          location: locationFilterId ?? undefined,
-          status:
-            statusFilter !== "All Status"
-              ? (statusFilter.toLowerCase().replace(" ", "_") as any)
-              : undefined,
-          search,
-          period: (frequencyFilter !== "All"
-            ? frequencyFilter.toLowerCase()
-            : undefined) as any,
-        },
-        { skip: !token },
-      );
+    data: dmTasksData,
+    isLoading: dmTasksLoading,
+    isError: dmTasksError,
+    refetch: dmTasksRefetch,
+  } = useGetTasksByDistrictManagerQuery(
+    {
+      page: currentPage,
+      location: locationFilterId ?? undefined,
+      search,
+    },
+    { skip: !isDistrictManager || !token },
+  );
 
-  // Locations query based on role
   const {
-    data: locationsData,
-    isLoading: locationsLoading,
-  } = isDistrictManager
-    ? useGetLocationsByDistrictManagerQuery(undefined, { skip: !token })
-    : useGetLocationsQuery(undefined, { skip: !token });
+    data: adminTasksData,
+    isLoading: adminTasksLoading,
+    isError: adminTasksError,
+    refetch: adminTasksRefetch,
+  } = useGetTasksQuery(
+    {
+      page: currentPage,
+      location: locationFilterId ?? undefined,
+      status:
+        statusFilter !== "All Status"
+          ? (statusFilter.toLowerCase().replace(" ", "_") as any)
+          : undefined,
+      search,
+      period: (frequencyFilter !== "All"
+        ? frequencyFilter.toLowerCase()
+        : undefined) as any,
+    },
+    { skip: isDistrictManager || !token },
+  );
+
+  // Determine which data to use
+  const tasksData = isDistrictManager ? dmTasksData : adminTasksData;
+  const isLoading = isDistrictManager ? dmTasksLoading : adminTasksLoading;
+  const isError = isDistrictManager ? dmTasksError : adminTasksError;
+  const refetch = isDistrictManager ? dmTasksRefetch : adminTasksRefetch;
+
+  console.log("tasks in the management:",tasksData)
+
+  // Locations query based on role - Always call both hooks unconditionally
+  const {
+    data: dmLocationsData,
+    isLoading: dmLocationsLoading,
+  } = useGetLocationsByDistrictManagerQuery(undefined, { skip: !isDistrictManager || !token });
+
+  const {
+    data: adminLocationsData,
+    isLoading: adminLocationsLoading,
+  } = useGetLocationsQuery(undefined, { skip: isDistrictManager || !token });
+
+  // Determine which locations data to use
+  const locationsData = isDistrictManager ? dmLocationsData : adminLocationsData;
+  const locationsLoading = isDistrictManager ? dmLocationsLoading : adminLocationsLoading;
 
   // --- Mutations based on role ---
   const [createTaskAdmin, { isLoading: isCreatingAdmin }] = useCreateTaskMutation();
@@ -343,31 +361,36 @@ export default function TaskManagementSystem() {
   };
 
   const handleTaskActionSave = async (formData: any) => {
-    const payload = {
-      title: formData.title,
-      description: formData.description,
-      location: formData.locationId,
-      assigned_to: formData.assignedToIds,
-      due_date: formData.dueDate,
-      is_recurring: formData.isRecurring,
-      requires_photo: formData.requirePhoto,
-      ...(formData.isRecurring && {
-        frequency: formData.frequency,
-      }),
-    };
-
-    try {
-      if (selectedTask) {
-        await editTask({ id: selectedTask.id, data: payload }).unwrap();
-      } else {
-        await createTask(payload as any).unwrap();
-      }
-      refetch();
-      setIsActionOpen(false);
-    } catch (err) {
-      console.error(err);
-    }
+  const payload = {
+    title: formData.title,
+    description: formData.description,
+    location: formData.locationId,
+    assigned_to: formData.assignedToIds,
+    due_date: formData.dueDate,
+    is_recurring: formData.isRecurring,
+    requires_photo: formData.requirePhoto,
+    ...(formData.isRecurring && {
+      frequency: formData.frequency,
+    }),
   };
+
+  try {
+    if (selectedTask) {
+      // District Manager uses 'body' property, Super Admin uses 'data' property
+      if (isDistrictManager) {
+        await editTask({ id: selectedTask.id, body: payload }).unwrap();
+      } else {
+        await editTask({ id: selectedTask.id, data: payload }).unwrap();
+      }
+    } else {
+      await createTask(payload as any).unwrap();
+    }
+    refetch();
+    setIsActionOpen(false);
+  } catch (err) {
+    console.error(err);
+  }
+};
 
   const handleApprove = async (taskId: number) => {
     try {
@@ -415,13 +438,13 @@ export default function TaskManagementSystem() {
     );
 
   // Handle different response structures
-  const tasks = tasksData?.tasks?.results || tasksData?.tasks || [];
-  const totalTasks = tasksData?.tasks?.count || tasksData?.tasks_meta?.count || tasksData?.tasks?.length || 0;
+  const tasks = tasksData?.tasks?.results || [];
+  const totalTasks = tasksData?.tasks?.count || 0
   const totalPages = Math.ceil(totalTasks / itemsPerPage);
   
   // Handle different stats structures
   const stats = tasksData?.stats || {
-    all_tasks: tasksData?.tasks?.length || 0,
+    all_tasks: tasksData?.tasks?.count || 0,
     overdue: 0,
     completed: 0,
     rejected: 0,
@@ -432,6 +455,8 @@ export default function TaskManagementSystem() {
     "All Locations",
     ...(locationsData?.locations?.map((loc: any) => loc.name) || []),
   ];
+
+  console.log("selected task:", selectedTask)
 
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-[#e4e4e7] p-4 md:p-8 font-sans">
@@ -530,8 +555,10 @@ export default function TaskManagementSystem() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e1e20]">
-              {tasks.map((apiTask: any) => {
+              {tasks?.map((apiTask: any) => {
                 const task = mapApiTaskToDisplay(apiTask);
+
+                console.log("a single task:", task)
                 const displayStatus = mapStatusToDisplay(task.status);
                 const counts = task.status_counts || {
                   pending: 0,
