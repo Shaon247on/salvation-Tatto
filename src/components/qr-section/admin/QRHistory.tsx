@@ -2,12 +2,13 @@
 
 import React, { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, ChevronLeft, ChevronRight, Maximize2 } from "lucide-react";
 import {
   useGetQrAdminSummaryQuery,
   useGetAdminQrDetailsQuery,
 } from "@/redux/services/admin/qrsSection/qrAdminApi";
 import QRDetailsModal from "./QRDetailsModal";
+import QRFullScreenModal from "./QRFullScreenModal";
 
 const QRHistory = () => {
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<
@@ -16,6 +17,7 @@ const QRHistory = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedQrId, setSelectedQrId] = useState<number | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [fullScreenQr, setFullScreenQr] = useState<string | null>(null);
 
   // Fetch QR list with filters
   const {
@@ -64,6 +66,14 @@ const QRHistory = () => {
     }
   };
 
+  const handleQrClick = (token: string) => {
+    setFullScreenQr(token);
+  };
+
+  const handleCloseFullScreen = () => {
+    setFullScreenQr(null);
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
@@ -81,6 +91,13 @@ const QRHistory = () => {
 
   return (
     <>
+      {/* Full Screen QR Modal */}
+      <QRFullScreenModal
+        isOpen={!!fullScreenQr}
+        onClose={handleCloseFullScreen}
+        value={fullScreenQr || ""}
+      />
+
       <div className="bg-[#0A0A0A] border border-[#968B79]/60 rounded-2xl p-8">
         <div className="mb-8">
           <h3 className="text-white font-bold text-lg mb-4">QR History</h3>
@@ -160,9 +177,12 @@ const QRHistory = () => {
                       className="group hover:bg-white/2 transition-colors"
                     >
                       <td className="py-5">
-                        <div className="bg-white p-1 rounded-md w-fit opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleQrClick(row.token)}
+                          className="bg-white p-1 rounded-md w-fit opacity-80 group-hover:opacity-100 transition-opacity cursor-pointer hover:scale-105 hover:shadow-lg hover:shadow-white/10 transition-all"
+                        >
                           <QRCodeSVG value={row.token} size={32} />
-                        </div>
+                        </button>
                       </td>
                       <td className="py-5">
                         <p className="text-gray-300 text-xs font-semibold">

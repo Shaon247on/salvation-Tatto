@@ -1,16 +1,15 @@
 "use client";
 
-import {
-  Search,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { Search, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import TaskItem from "./TaskItem";
 import { useState } from "react";
-import { TaskActionModal } from "../admin/TaskActionModal";
 import { BranchManagerTaskCreationModel } from "./BranchManagerTaskCreationModel";
-import { useCreateTaskByBranchManagerMutation, useDeleteTaskByBranchManagerMutation, useGetManagerTasksQuery, useUpdateTaskByBranchManagerMutation } from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
+import {
+  useCreateTaskByBranchManagerMutation,
+  useDeleteTaskByBranchManagerMutation,
+  useGetManagerTasksQuery,
+  useUpdateTaskByBranchManagerMutation,
+} from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
 
 export default function BranchManagerView() {
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);

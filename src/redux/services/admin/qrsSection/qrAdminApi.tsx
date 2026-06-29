@@ -5,15 +5,17 @@ import { baseApi } from "@/redux/store/baseApi";
 export interface QrSession {
   id: number;
   token: string;
-  location_id?: number; // Added from Postman
-  location?: string | number; // Can be name or ID depending on endpoint
+  location_id?: number;
+  location?: string | number;
   location_name?: string;
-  refresh_interval: number;
-  interval_display: string;
+  duration_seconds: number;
+  duration_minutes: number;
+  duration_seconds_part: number;
+  duration_display: string;
   expires_at: string;
   is_active: boolean;
   is_expired?: boolean;
-  seconds_left?: number; // Added from Postman
+  seconds_left?: number;
   present_count: number;
   late_count: number;
   absent_count: number;
@@ -40,12 +42,12 @@ export interface LocationOption {
 
 // --- Response Interfaces ---
 
-interface QrAdminGenerateResponse {
+export interface QrAdminGenerateResponse {
   message: string;
   qr_session: QrSession;
 }
 
-interface QrAdminSummaryResponse {
+export interface QrAdminSummaryResponse {
   active_sessions: QrSession[];
   history: {
     count: number;
@@ -58,7 +60,7 @@ interface QrAdminSummaryResponse {
   };
 }
 
-interface QrAdminDetailsResponse {
+export interface QrAdminDetailsResponse {
   qr_session: QrSession;
   attendances: AttendanceRecord[];
 }
@@ -73,7 +75,7 @@ export const qrAdminApi = baseApi.injectEndpoints({
      */
     generateAdminQr: builder.mutation<
       QrAdminGenerateResponse,
-      { refresh_interval: number; location: number }
+      { minutes: number; seconds: number; location: number }
     >({
       query: (body) => ({
         url: "/admin/qr/",

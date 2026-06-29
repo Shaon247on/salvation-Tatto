@@ -5,8 +5,10 @@ import {
   AlertCircle,
   CheckCircle,
   Image as ImageIcon,
+  X,
+  Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 
 import {
@@ -18,7 +20,8 @@ import { useGetLocationsQuery } from "@/redux/services/admin/location/locationAp
 import Image from "next/image";
 
 export const SendNotificationForm = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // -----------------------------
   // State
@@ -31,11 +34,19 @@ export const SendNotificationForm = () => {
   const [selectedRecipients, setSelectedRecipients] = useState<number[]>([]);
   const [message, setMessage] = useState("");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const [formStatus, setFormStatus] = useState<"idle" | "success" | "error">(
     "idle",
   );
   const [statusMessage, setStatusMessage] = useState("");
+
+  // -----------------------------
+  // Role-based access control
+  // -----------------------------
+  const userRole = user?.role;
+  const isSuperAdmin = userRole === "super_admin";
+  const isBranchManager = userRole === "branch_manager";
 
   // -----------------------------
   // Locations
@@ -46,8 +57,17 @@ export const SendNotificationForm = () => {
   const activeLocations =
     locationsResponse?.locations?.filter((l) => l.status === "active") || [];
 
+  const userLocationId = user?.location?.id;
+
+  // Auto-select location for branch manager
+  useEffect(() => {
+    if (isBranchManager && userLocationId) {
+      setSelectedLocation(userLocationId);
+    }
+  }, [isBranchManager, userLocationId]);
+
   // -----------------------------
-  // Fetch control (CRITICAL FIX)
+  // Fetch control
   // -----------------------------
   const shouldFetchRecipients = Boolean(selectedLocation || selectedRole);
 
@@ -105,7 +125,23 @@ export const SendNotificationForm = () => {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setSelectedImage(file);
+    if (file) {
+      setSelectedImage(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleTriggerFileInput = () => {
+    fileInputRef.current?.click();
   };
 
   // -----------------------------
@@ -150,6 +186,10 @@ export const SendNotificationForm = () => {
       setMessage("");
       setSelectedRecipients([]);
       setSelectedImage(null);
+      setImagePreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
 
       setTimeout(() => setFormStatus("idle"), 3000);
     } catch (err) {
@@ -162,10 +202,40 @@ export const SendNotificationForm = () => {
     recipients.length > 0 && selectedRecipients.length === recipients.length;
 
   // -----------------------------
+  // Role-based role options
+  // -----------------------------
+  const getRoleOptions = () => {
+    const roles = [
+      { value: "super_admin", label: "Super Admin" },
+      { value: "staff", label: "Staff" },
+      { value: "branch_manager", label: "Branch Manager" },
+      { value: "district_manager", label: "District Manager" },
+      { value: "tattoo_artist", label: "Tattoo Artist" },
+      { value: "body_piercer", label: "Body Piercer" },
+    ];
+
+    // Remove "super_admin" only if the current user is a super admin
+    if (isSuperAdmin) {
+      return roles.filter((role) => role.value !== "super_admin");
+    }
+
+    // For branch managers, remove "branch_manager" but keep "super_admin"
+    if (isBranchManager) {
+      return roles.filter((role) => role.value !== "branch_manager");
+    }
+
+    // For all other users (district managers, etc.), show all roles including super_admin
+    return roles;
+  };
+
+  // -----------------------------
   // UI
   // -----------------------------
   return (
-    <form className="bg-[#0A0A0A] border border-[#968B79]/60 rounded-3xl p-8 flex flex-col h-full">
+    <form 
+      className="bg-[#0A0A0A] border border-[#968B79]/60 rounded-3xl p-8 flex flex-col h-full"
+      onSubmit={handleSubmit}
+    >
       {/* Header */}
       <div className="flex items-center gap-3 mb-8">
         <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center border border-white/10">
@@ -196,19 +266,21 @@ export const SendNotificationForm = () => {
           </div>
         )}
 
-        {/* Location */}
-        <select
-          value={selectedLocation || ""}
-          onChange={handleLocationChange}
-          className="w-full bg-black border border-[#968B79]/60 rounded-xl p-4 text-white"
-        >
-          <option value="">Select Branch</option>
-          {activeLocations.map((loc) => (
-            <option key={loc.id} value={loc.id}>
-              {loc.name}
-            </option>
-          ))}
-        </select>
+        {/* Location - Hide for branch managers */}
+        {!isBranchManager && (
+          <select
+            value={selectedLocation || ""}
+            onChange={handleLocationChange}
+            className="w-full bg-black border border-[#968B79]/60 rounded-xl p-4 text-white"
+          >
+            <option value="">Select Branch</option>
+            {activeLocations.map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.name}
+              </option>
+            ))}
+          </select>
+        )}
 
         {/* Role */}
         <select
@@ -217,11 +289,11 @@ export const SendNotificationForm = () => {
           className="w-full bg-black border border-[#968B79]/60 rounded-xl p-4 text-white"
         >
           <option value="">Select Role</option>
-          <option value="staff">Staff</option>
-          <option value="branch_manager">Branch Manager</option>
-          <option value="district_manager">District Manager</option>
-          <option value="tattoo_artist">Tattoo Artist</option>
-          <option value="body_piercer">Body Piercer</option>
+          {getRoleOptions().map((role) => (
+            <option key={role.value} value={role.value}>
+              {role.label}
+            </option>
+          ))}
         </select>
 
         {/* Recipients */}
@@ -275,13 +347,69 @@ export const SendNotificationForm = () => {
           className="w-full bg-black border border-[#968B79]/60 rounded-2xl p-4 text-white min-h-24"
           placeholder="Message..."
         />
+
+        {/* Image Attachment */}
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase text-gray-500 tracking-wider">
+            Attach Image
+          </label>
+          
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageChange}
+            className="hidden"
+          />
+
+          {imagePreview ? (
+            <div className="relative group rounded-xl overflow-hidden border border-[#968B79]/60 bg-black/30">
+              <div className="relative h-48 w-full">
+                <Image
+                  src={imagePreview}
+                  alt="Preview"
+                  fill
+                  className="object-cover"
+                />
+              </div>
+              
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="p-2 bg-red-500/80 rounded-full hover:bg-red-500 transition-colors"
+                >
+                  <X size={20} className="text-white" />
+                </button>
+              </div>
+              
+              <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg">
+                <p className="text-[10px] text-gray-300 truncate max-w-[150px]">
+                  {selectedImage?.name}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleTriggerFileInput}
+              className="w-full border border-dashed border-[#968B79]/60 rounded-xl p-6 hover:border-[#968B79] transition-colors flex flex-col items-center gap-2"
+            >
+              <div className="w-10 h-10 bg-black/50 rounded-full flex items-center justify-center border border-white/10">
+                <Upload size={16} className="text-gray-400" />
+              </div>
+              <p className="text-xs text-gray-400">Click to upload an image</p>
+              <p className="text-[10px] text-gray-500">PNG, JPG, GIF up to 10MB</p>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Submit */}
       <button
         type="submit"
         disabled={isSending}
-        className="w-full mt-6 bg-white text-black py-4 rounded-2xl font-bold"
+        className="w-full mt-6 bg-white text-black py-4 rounded-2xl font-bold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isSending ? "Sending..." : "Send Notification"}
       </button>

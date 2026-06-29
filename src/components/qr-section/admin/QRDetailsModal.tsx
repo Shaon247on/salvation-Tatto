@@ -24,16 +24,40 @@ const QRDetailsModal: React.FC<QRDetailsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+  const formatTime = (timeString: string, dateString: string) => {
+    if (!timeString) return "N/A";
+
+    // Combine date and time to create a valid Date object
+    try {
+      // Parse the time string (format: "13:53:28.304635")
+      const [hours, minutes, seconds] = timeString.split(":").map(Number);
+
+      // Create a date object from the date string (format: "2026-06-29")
+      const date = new Date(dateString);
+      date.setHours(hours || 0);
+      date.setMinutes(minutes || 0);
+      date.setSeconds(seconds || 0);
+
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return "Invalid Date";
+      }
+
+      return date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    } catch (error) {
+      return "Invalid Date";
+    }
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -79,10 +103,11 @@ const QRDetailsModal: React.FC<QRDetailsModalProps> = ({
                 </div>
                 <div className="bg-[#1A1A1A] rounded-xl p-4">
                   <p className="text-gray-500 text-xs uppercase font-bold mb-2">
-                    Refresh Interval
+                    Duration
                   </p>
                   <p className="text-white font-semibold">
-                    {qrSession.interval_display}
+                    {qrSession.duration_minutes}:
+                    {String(qrSession.duration_seconds_part).padStart(2, "0")}
                   </p>
                 </div>
                 <div className="bg-[#1A1A1A] rounded-xl p-4">
@@ -99,7 +124,7 @@ const QRDetailsModal: React.FC<QRDetailsModalProps> = ({
                 </div>
                 <div className="bg-[#1A1A1A] rounded-xl p-4">
                   <p className="text-gray-500 text-xs uppercase font-bold mb-2">
-                    Expires At
+                    {qrSession.is_active ? "Expires At" : "Expired At"}
                   </p>
                   <p className="text-white font-semibold text-sm">
                     {formatDate(qrSession.expires_at)}
@@ -187,11 +212,11 @@ const QRDetailsModal: React.FC<QRDetailsModalProps> = ({
                               </span>
                             </td>
                             <td className="py-4 text-gray-400 text-xs">
-                              {formatTime(record.clock_in)}
+                              {formatTime(record.clock_in, record.date)}
                             </td>
                             <td className="py-4 text-gray-400 text-xs">
                               {record.clock_out
-                                ? formatTime(record.clock_out)
+                                ? formatTime(record.clock_out, record.date)
                                 : "N/A"}
                             </td>
                           </tr>

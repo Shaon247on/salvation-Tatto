@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Edit2, Trash2 } from "lucide-react";
+import { Edit2, Trash2, AlertTriangle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 interface UserTableProps {
   users: any[];
@@ -15,6 +16,27 @@ export const UserTable = ({
   onDelete,
   isLoading = false,
 }: UserTableProps) => {
+  const [deleteUser, setDeleteUser] = useState<any | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  const handleDeleteClick = (user: any) => {
+    setDeleteUser(user);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (deleteUser && onDelete) {
+      onDelete(deleteUser);
+    }
+    setIsDeleteDialogOpen(false);
+    setDeleteUser(null);
+  };
+
+  const handleCancelDelete = () => {
+    setIsDeleteDialogOpen(false);
+    setDeleteUser(null);
+  };
+
   return (
     <div className="mt-8 w-full">
       {/* --- Desktop View (Table) --- */}
@@ -84,7 +106,7 @@ export const UserTable = ({
                       <Edit2 size={16} />
                     </button>
                     <button
-                      onClick={() => onDelete?.(user)}
+                      onClick={() => handleDeleteClick(user)}
                       disabled={isLoading}
                       className="p-2 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -162,7 +184,7 @@ export const UserTable = ({
                   <Edit2 size={14} /> Edit
                 </button>
                 <button
-                  onClick={() => onDelete?.(user)}
+                  onClick={() => handleDeleteClick(user)}
                   disabled={isLoading}
                   className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 rounded-lg text-sm font-medium hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
@@ -173,6 +195,56 @@ export const UserTable = ({
           ))
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {isDeleteDialogOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={handleCancelDelete}
+          />
+
+          {/* Dialog */}
+          <div className="relative w-full max-w-md bg-[#0D0D0D] border border-[#262626] rounded-[32px] p-8 shadow-2xl">
+            {/* Icon */}
+            <div className="flex justify-center mb-6">
+              <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center border border-red-500/20">
+                <AlertTriangle className="text-red-500" size={32} strokeWidth={2} />
+              </div>
+            </div>
+
+            {/* Title */}
+            <h2 className="text-2xl font-bold text-white text-center mb-2 tracking-tight">
+              Delete User
+            </h2>
+
+            {/* Description */}
+            <p className="text-gray-400 text-center text-sm mb-8 leading-relaxed">
+              Are you sure you want to delete <span className="text-white font-semibold">{deleteUser?.name}</span>? 
+              This action cannot be undone and will remove all associated data.
+            </p>
+
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelDelete}
+                disabled={isLoading}
+                className="flex-1 py-4 bg-[#1A1A1A] border border-[#262626] text-gray-400 rounded-2xl font-bold hover:bg-[#262626] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isLoading}
+                className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/20"
+              >
+                {isLoading ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

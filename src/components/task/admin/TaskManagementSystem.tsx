@@ -15,7 +15,10 @@ import {
 
 // --- Import RTK Query Hooks ---
 import { useAppSelector } from "@/redux/store";
-import { selectCurrentToken, selectUserRole } from "@/redux/features/auth/authSlice";
+import {
+  selectCurrentToken,
+  selectUserRole,
+} from "@/redux/features/auth/authSlice";
 
 // --- Import Modal Components ---
 import { TaskActionModal } from "./TaskActionModal";
@@ -25,6 +28,7 @@ import RejectModal from "./RejectModal";
 
 // --- Import API Hooks ---
 import {
+  // Super Admin Hooks
   useGetTasksQuery,
   useCreateTaskMutation,
   useEditTaskMutation,
@@ -32,6 +36,7 @@ import {
   useApproveTaskMutation,
   useRejectTaskMutation,
   useFireUserMutation,
+  // District Manager Hooks
   useGetTasksByDistrictManagerQuery,
   useGetLocationsByDistrictManagerQuery,
   useCreateTaskByDistrictManagerMutation,
@@ -41,6 +46,12 @@ import {
 
 // --- Import Location API ---
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
+import {
+  useCreateTaskByBranchManagerMutation,
+  useDeleteTaskByBranchManagerMutation,
+  useUpdateTaskByBranchManagerMutation,
+  useGetManagerTasksQuery
+} from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
 
 // --- Types ---
 export type Status =
@@ -127,7 +138,10 @@ const getTaskSummaryStatus = (task: any): Status => {
   if (counts.rejected > 0) return "rejected";
   if (counts.awaiting_review > 0) return "awaiting_review";
   if (counts.overdue > 0) return "overdue";
-  if (counts.approved > 0 && counts.approved >= (task.assignments?.length || 0)) {
+  if (
+    counts.approved > 0 &&
+    counts.approved >= (task.assignments?.length || 0)
+  ) {
     return "approved";
   }
   return "pending";
@@ -137,8 +151,9 @@ export default function TaskManagementSystem() {
   const token = useAppSelector(selectCurrentToken);
   const userRole = useAppSelector(selectUserRole);
 
-  // Determine if user is district manager
+  // Determine user role
   const isDistrictManager = userRole === "district_manager";
+  const isBranchManager = userRole === "branch_manager";
 
   // --- State ---
   const [search, setSearch] = useState("");
@@ -157,7 +172,23 @@ export default function TaskManagementSystem() {
 
   const itemsPerPage = 15;
 
-  // --- API Queries based on role - Always call both hooks unconditionally ---
+  // --- API Queries based on role - Always call all hooks unconditionally ---
+
+  // Branch Manager Tasks
+  const {
+    data: bmTasksData,
+    isLoading: bmTasksLoading,
+    isError: bmTasksError,
+    refetch: bmTasksRefetch,
+  } = useGetManagerTasksQuery(
+    {
+      page: currentPage,
+      search,
+    },
+    { skip: !isBranchManager || !token },
+  );
+
+  // District Manager Tasks
   const {
     data: dmTasksData,
     isLoading: dmTasksLoading,
@@ -172,6 +203,7 @@ export default function TaskManagementSystem() {
     { skip: !isDistrictManager || !token },
   );
 
+  // Super Admin Tasks
   const {
     data: adminTasksData,
     isLoading: adminTasksLoading,
@@ -190,55 +222,123 @@ export default function TaskManagementSystem() {
         ? frequencyFilter.toLowerCase()
         : undefined) as any,
     },
-    { skip: isDistrictManager || !token },
+    { skip: (!isDistrictManager && !isBranchManager) || !token },
   );
 
   // Determine which data to use
-  const tasksData = isDistrictManager ? dmTasksData : adminTasksData;
-  const isLoading = isDistrictManager ? dmTasksLoading : adminTasksLoading;
-  const isError = isDistrictManager ? dmTasksError : adminTasksError;
-  const refetch = isDistrictManager ? dmTasksRefetch : adminTasksRefetch;
+  const tasksData = isBranchManager
+    ? bmTasksData
+    : isDistrictManager
+      ? dmTasksData
+      : adminTasksData;
 
-  console.log("tasks in the management:",tasksData)
+  const isLoading = isBranchManager
+    ? bmTasksLoading
+    : isDistrictManager
+      ? dmTasksLoading
+      : adminTasksLoading;
 
-  // Locations query based on role - Always call both hooks unconditionally
-  const {
-    data: dmLocationsData,
-    isLoading: dmLocationsLoading,
-  } = useGetLocationsByDistrictManagerQuery(undefined, { skip: !isDistrictManager || !token });
+  const isError = isBranchManager
+    ? bmTasksError
+    : isDistrictManager
+      ? dmTasksError
+      : adminTasksError;
 
-  const {
-    data: adminLocationsData,
-    isLoading: adminLocationsLoading,
-  } = useGetLocationsQuery(undefined, { skip: isDistrictManager || !token });
+  const refetch = isBranchManager
+    ? bmTasksRefetch
+    : isDistrictManager
+      ? dmTasksRefetch
+      : adminTasksRefetch;
+
+  // Locations query based on role - Only super admin and district manager need locations
+  const { data: dmLocationsData, isLoading: dmLocationsLoading } =
+    useGetLocationsByDistrictManagerQuery(undefined, {
+      skip: !isDistrictManager || !token,
+    });
+
+  const { data: adminLocationsData, isLoading: adminLocationsLoading } =
+    useGetLocationsQuery(undefined, {
+      skip: isDistrictManager || isBranchManager || !token,
+    });
 
   // Determine which locations data to use
-  const locationsData = isDistrictManager ? dmLocationsData : adminLocationsData;
-  const locationsLoading = isDistrictManager ? dmLocationsLoading : adminLocationsLoading;
+  const locationsData = isDistrictManager
+    ? dmLocationsData
+    : adminLocationsData;
+  const locationsLoading = isDistrictManager
+    ? dmLocationsLoading
+    : adminLocationsLoading;
 
   // --- Mutations based on role ---
-  const [createTaskAdmin, { isLoading: isCreatingAdmin }] = useCreateTaskMutation();
+  // Super Admin Mutations
+  const [createTaskAdmin, { isLoading: isCreatingAdmin }] =
+    useCreateTaskMutation();
   const [editTaskAdmin, { isLoading: isEditingAdmin }] = useEditTaskMutation();
-  const [deleteTaskAdmin, { isLoading: isDeletingAdmin }] = useDeleteTaskMutation();
-  const [approveTaskAdmin, { isLoading: isApprovingAdmin }] = useApproveTaskMutation();
-  const [rejectTaskAdmin, { isLoading: isRejectingAdmin }] = useRejectTaskMutation();
+  const [deleteTaskAdmin, { isLoading: isDeletingAdmin }] =
+    useDeleteTaskMutation();
+  const [approveTaskAdmin, { isLoading: isApprovingAdmin }] =
+    useApproveTaskMutation();
+  const [rejectTaskAdmin, { isLoading: isRejectingAdmin }] =
+    useRejectTaskMutation();
   const [fireUserAdmin, { isLoading: isFiringAdmin }] = useFireUserMutation();
 
-  const [createTaskDM, { isLoading: isCreatingDM }] = useCreateTaskByDistrictManagerMutation();
-  const [editTaskDM, { isLoading: isEditingDM }] = useUpdateTaskByDistrictManagerMutation();
-  const [deleteTaskDM, { isLoading: isDeletingDM }] = useDeleteTaskByDistrictManagerMutation();
+  // District Manager Mutations
+  const [createTaskDM, { isLoading: isCreatingDM }] =
+    useCreateTaskByDistrictManagerMutation();
+  const [editTaskDM, { isLoading: isEditingDM }] =
+    useUpdateTaskByDistrictManagerMutation();
+  const [deleteTaskDM, { isLoading: isDeletingDM }] =
+    useDeleteTaskByDistrictManagerMutation();
+
+  // Branch Manager Mutations
+  const [createTaskBM, { isLoading: isCreatingBM }] =
+    useCreateTaskByBranchManagerMutation();
+  const [editTaskBM, { isLoading: isEditingBM }] =
+    useUpdateTaskByBranchManagerMutation();
+  const [deleteTaskBM, { isLoading: isDeletingBM }] =
+    useDeleteTaskByBranchManagerMutation();
 
   // Select the appropriate mutations based on role
-  const createTask = isDistrictManager ? createTaskDM : createTaskAdmin;
-  const editTask = isDistrictManager ? editTaskDM : editTaskAdmin;
-  const deleteTask = isDistrictManager ? deleteTaskDM : deleteTaskAdmin;
+  const createTask = isBranchManager
+    ? createTaskBM
+    : isDistrictManager
+      ? createTaskDM
+      : createTaskAdmin;
+
+  const editTask = isBranchManager
+    ? editTaskBM
+    : isDistrictManager
+      ? editTaskDM
+      : editTaskAdmin;
+
+  const deleteTask = isBranchManager
+    ? deleteTaskBM
+    : isDistrictManager
+      ? deleteTaskDM
+      : deleteTaskAdmin;
+
   const approveTask = approveTaskAdmin;
   const rejectTask = rejectTaskAdmin;
   const fireUser = fireUserAdmin;
 
-  const isCreating = isDistrictManager ? isCreatingDM : isCreatingAdmin;
-  const isEditing = isDistrictManager ? isEditingDM : isEditingAdmin;
-  const isDeleting = isDistrictManager ? isDeletingDM : isDeletingAdmin;
+  const isCreating = isBranchManager
+    ? isCreatingBM
+    : isDistrictManager
+      ? isCreatingDM
+      : isCreatingAdmin;
+
+  const isEditing = isBranchManager
+    ? isEditingBM
+    : isDistrictManager
+      ? isEditingDM
+      : isEditingAdmin;
+
+  const isDeleting = isBranchManager
+    ? isDeletingBM
+    : isDistrictManager
+      ? isDeletingDM
+      : isDeletingAdmin;
+
   const isApproving = isApprovingAdmin;
   const isRejecting = isRejectingAdmin;
   const isFiring = isFiringAdmin;
@@ -288,27 +388,38 @@ export default function TaskManagementSystem() {
         .map((assignment: any) => assignment.employee?.name || "")
         .join(", "),
       due_date: apiTask.due_date,
-      assigned_to: assignments.map((assignment: any) => assignment.employee?.employee_id || assignment.employee?.id || 0),
-      assigned_to_role: firstAssignment?.employee?.role_display || firstAssignment?.employee?.role || "",
-      location_name: apiTask.location_name,
-      location: apiTask.location,
+      assigned_to: assignments.map(
+        (assignment: any) =>
+          assignment.employee?.employee_id || assignment.employee?.id || 0,
+      ),
+      assigned_to_role:
+        firstAssignment?.employee?.role_display ||
+        firstAssignment?.employee?.role ||
+        "",
+      location_name: apiTask.location_name || "N/A",
+      location: apiTask.location || 0,
       frequency: apiTask.frequency || "none",
       assigned_to_email: firstAssignment?.employee?.email || "",
       is_recurring: apiTask.is_recurring,
       photo_url: firstAssignment?.photo_url || null,
-      rejection_reason: assignments.find((assignment: any) => assignment.rejection_reason)?.rejection_reason || null,
+      rejection_reason:
+        assignments.find((assignment: any) => assignment.rejection_reason)
+          ?.rejection_reason || null,
       requires_photo: apiTask.requires_photo,
       assignments,
       status_counts: apiTask.status_counts,
       created_by: apiTask.created_by,
-      created_at: apiTask.created_at,
+      created_at: apiTask.created_at || apiTask.submitted_at,
     };
   };
 
   const mapTaskToModal = (task: Task | null): TaskModalDTO | null => {
     if (!task) return null;
 
-    const assignmentNames = task.assignments?.map((assignment: any) => assignment.employee?.name || "") || [];
+    const assignmentNames =
+      task.assignments?.map(
+        (assignment: any) => assignment.employee?.name || "",
+      ) || [];
     const name = assignmentNames.join(", ") || task.assigned_to_name || "";
 
     return {
@@ -317,7 +428,11 @@ export default function TaskManagementSystem() {
       location: task.location_name ?? "",
       locationId: task.location ?? 0,
       assignedTo: name,
-      assignedToIds: task.assignments?.map((assignment: any) => assignment.employee?.employee_id || assignment.employee?.id || 0) || [],
+      assignedToIds:
+        task.assignments?.map(
+          (assignment: any) =>
+            assignment.employee?.employee_id || assignment.employee?.id || 0,
+        ) || [],
       dueDate: task.due_date ?? "",
       employeeName: name,
       employeeInitials: name
@@ -361,36 +476,38 @@ export default function TaskManagementSystem() {
   };
 
   const handleTaskActionSave = async (formData: any) => {
-  const payload = {
-    title: formData.title,
-    description: formData.description,
-    location: formData.locationId,
-    assigned_to: formData.assignedToIds,
-    due_date: formData.dueDate,
-    is_recurring: formData.isRecurring,
-    requires_photo: formData.requirePhoto,
-    ...(formData.isRecurring && {
-      frequency: formData.frequency,
-    }),
-  };
+    const payload = {
+      title: formData.title,
+      description: formData.description,
+      location: formData.locationId,
+      assigned_to: formData.assignedToIds,
+      due_date: formData.dueDate,
+      is_recurring: formData.isRecurring,
+      requires_photo: formData.requirePhoto,
+      ...(formData.isRecurring && {
+        frequency: formData.frequency,
+      }),
+    };
 
-  try {
-    if (selectedTask) {
-      // District Manager uses 'body' property, Super Admin uses 'data' property
-      if (isDistrictManager) {
-        await editTask({ id: selectedTask.id, body: payload }).unwrap();
+    try {
+      if (selectedTask) {
+        // Branch Manager uses 'data' property, District Manager uses 'body' property, Super Admin uses 'data' property
+        if (isBranchManager) {
+          await editTask({ id: selectedTask.id, data: payload }).unwrap();
+        } else if (isDistrictManager) {
+          await editTask({ id: selectedTask.id, body: payload }).unwrap();
+        } else {
+          await editTask({ id: selectedTask.id, data: payload }).unwrap();
+        }
       } else {
-        await editTask({ id: selectedTask.id, data: payload }).unwrap();
+        await createTask(payload as any).unwrap();
       }
-    } else {
-      await createTask(payload as any).unwrap();
+      refetch();
+      setIsActionOpen(false);
+    } catch (err) {
+      console.error(err);
     }
-    refetch();
-    setIsActionOpen(false);
-  } catch (err) {
-    console.error(err);
-  }
-};
+  };
 
   const handleApprove = async (taskId: number) => {
     try {
@@ -438,25 +555,29 @@ export default function TaskManagementSystem() {
     );
 
   // Handle different response structures
-  const tasks = tasksData?.tasks?.results || [];
-  const totalTasks = tasksData?.tasks?.count || 0
+  const tasks = tasksData?.tasks?.results || tasksData?.tasks || [];
+  const totalTasks =
+    tasksData?.tasks?.count ||
+    tasksData?.tasks_meta?.count ||
+    tasksData?.tasks?.length ||
+    0;
   const totalPages = Math.ceil(totalTasks / itemsPerPage);
-  
+
   // Handle different stats structures
   const stats = tasksData?.stats || {
-    all_tasks: tasksData?.tasks?.count || 0,
+    all_tasks: tasksData?.tasks?.count || tasksData?.tasks?.length || 0,
     overdue: 0,
     completed: 0,
     rejected: 0,
   };
 
-  // Location options
-  const locationOptions = [
-    "All Locations",
-    ...(locationsData?.locations?.map((loc: any) => loc.name) || []),
-  ];
-
-  console.log("selected task:", selectedTask)
+  // Location options - Branch manager doesn't have location filter
+  const locationOptions = isBranchManager
+    ? ["All Locations"]
+    : [
+        "All Locations",
+        ...(locationsData?.locations?.map((loc: any) => loc.name) || []),
+      ];
 
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-[#e4e4e7] p-4 md:p-8 font-sans">
@@ -473,19 +594,21 @@ export default function TaskManagementSystem() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {!isDistrictManager && (
+          {!isBranchManager && !isDistrictManager && (
             <FilterDropdown
               value={frequencyFilter}
               onChange={handleFrequencyChange}
               options={["All", "daily", "weekly", "monthly", "yearly"]}
             />
           )}
-          <FilterDropdown
-            value={locationFilter}
-            onChange={handleLocationFilterChange}
-            options={locationOptions}
-          />
-          {!isDistrictManager && (
+          {!isBranchManager && (
+            <FilterDropdown
+              value={locationFilter}
+              onChange={handleLocationFilterChange}
+              options={locationOptions}
+            />
+          )}
+          {!isBranchManager && !isDistrictManager && (
             <FilterDropdown
               value={statusFilter}
               onChange={handleStatusChange}
@@ -557,8 +680,6 @@ export default function TaskManagementSystem() {
             <tbody className="divide-y divide-[#1e1e20]">
               {tasks?.map((apiTask: any) => {
                 const task = mapApiTaskToDisplay(apiTask);
-
-                console.log("a single task:", task)
                 const displayStatus = mapStatusToDisplay(task.status);
                 const counts = task.status_counts || {
                   pending: 0,
@@ -592,8 +713,10 @@ export default function TaskManagementSystem() {
                       </div>
                     </td>
                     <td className="px-6 py-5 text-sm">
-                      {apiTask.created_at
-                        ? new Date(apiTask.created_at).toLocaleDateString()
+                      {apiTask.created_at || apiTask.submitted_at
+                        ? new Date(
+                            apiTask.created_at || apiTask.submitted_at,
+                          ).toLocaleDateString()
                         : "N/A"}
                     </td>
                     <td

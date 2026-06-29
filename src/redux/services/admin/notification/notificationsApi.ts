@@ -2,31 +2,41 @@ import { baseApi } from "@/redux/store/baseApi";
 
 // --- Types & Interfaces ---
 
+
 export interface NotificationStats {
   total_sent: number;
   delivered: number;
   active_locations: number;
 }
 
-export interface Recipients {
+export interface Recipient {
   id: number;
   name: string;
   role: string;
 }
 
-export interface NotificationItem {
+// Received notification shape from API
+export interface ReceivedNotificationItem {
+  id: number;
+  sender: number;
+  sender_name: string;
+  sender_role: string;
+  message: string;
+  image: string;
+  created_at: string;
+}
+
+// Sent notification shape from API
+export interface SentNotificationItem {
   id: number;
   message: string;
   image: string;
-  recipients: Recipients;
-  created_at: string; // ISO Date string
+  created_at: string;
+  recipients: Recipient[];
 }
 
 export interface GetNotificationsResponse {
-  received: NotificationItem[];
-}
-export interface GetNotificationsSentResponse {
-  sent: NotificationItem[];
+  received: ReceivedNotificationItem[];
 }
 
 export interface SendNotificationRequest {
@@ -61,7 +71,6 @@ export interface RecipientItem {
 export interface GetRecipientsResponse {
   recipients: RecipientItem[];
 }
-
 // --- API Slice ---
 
 export const notificationApi = baseApi.injectEndpoints({
@@ -87,7 +96,7 @@ export const notificationApi = baseApi.injectEndpoints({
           : [{ type: "Notifications", id: "LIST" }],
     }),
 
-    getSentNotification: builder.query<NotificationItem[], void>({
+    getSentNotification: builder.query<SentNotificationItem[], void>({
       query: () => "/admin/notifications/sent/",
       providesTags: (result) =>
         result

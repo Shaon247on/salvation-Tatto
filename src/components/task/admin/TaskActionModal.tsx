@@ -12,9 +12,10 @@ import { useGetLocationsQuery } from "@/redux/services/admin/location/locationAp
 import { 
   useGetEmployeesForDropdownQuery,
   useGetLocationsByDistrictManagerQuery,
-  useGetEmployeesByLocationByDistrictManagerQuery
+  useGetEmployeesByLocationByDistrictManagerQuery,
 } from "@/redux/services/admin/tasks/taskApi";
 import { EmployeeMultiSelect } from "./EmployeeMultiSelect";
+import { useGetManagerEmployeesByBranchManagerQuery } from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
 
 interface TaskActionModalProps {
   isOpen: boolean;
@@ -34,13 +35,15 @@ export const TaskActionModal = ({
   const isEditMode = !!initialData;
   const token = useAppSelector(selectCurrentToken);
   const userRole = useAppSelector(selectUserRole);
-  console.log("the main data:",initialData)
-  // Determine if user is district manager
+  
+  // Determine user role
   const isDistrictManager = userRole === "district_manager";
+  const isBranchManager = userRole === "branch_manager";
 
   console.log("Editable task:", initialData);
   console.log("User Role:", userRole);
   console.log("Is District Manager:", isDistrictManager);
+  console.log("Is Branch Manager:", isBranchManager);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -56,7 +59,7 @@ export const TaskActionModal = ({
 
   // --- CRITICAL FIX: Always call all hooks unconditionally ---
 
-  // Fetch locations based on role - Always call both hooks
+  // Fetch locations based on role - Only super admin and district manager need locations
   const {
     data: dmLocationsResponse,
     isLoading: dmLocationsLoading,
@@ -68,7 +71,7 @@ export const TaskActionModal = ({
     data: adminLocationsResponse,
     isLoading: adminLocationsLoading,
   } = useGetLocationsQuery(undefined, { 
-    skip: isDistrictManager || !token 
+    skip: isDistrictManager || isBranchManager || !token 
   });
 
   // Determine which locations data to use
@@ -85,8 +88,8 @@ export const TaskActionModal = ({
       setFormData({
         title: initialData?.taskName || "",
         description: initialData?.description || "",
-        location: initialData?.location || "",
-        locationId: initialData?.locationId || 0,
+        location: isBranchManager ? (initialData?.location || "") : (initialData?.location || ""),
+        locationId: isBranchManager ? (initialData?.locationId || 0) : (initialData?.locationId || 0),
 
         // initialData.assignedToIds can be an array of objects {id,name} or numbers
         assignedToIds: Array.isArray(initialData?.assignedToIds)
@@ -109,9 +112,18 @@ export const TaskActionModal = ({
         requirePhoto: initialData?.requirePhoto || false,
       });
     }
-  }, [initialData, isOpen]);
+  }, [initialData, isOpen, isBranchManager]);
 
-  // Fetch employees for selected location based on role - Always call both hooks
+  // Fetch employees based on role - Always call all hooks
+  // Branch Manager
+  const {
+    data: bmEmployeesResponse,
+    isLoading: bmEmployeesLoading,
+  } = useGetManagerEmployeesByBranchManagerQuery(undefined, {
+    skip: !isBranchManager || !isOpen,
+  });
+
+  // District Manager
   const {
     data: dmEmployeesResponse,
     isLoading: dmEmployeesLoading,
@@ -119,16 +131,28 @@ export const TaskActionModal = ({
     skip: !isDistrictManager || !formData.locationId || !isOpen,
   });
 
+  // Super Admin
   const {
     data: adminEmployeesResponse,
     isLoading: adminEmployeesLoading,
   } = useGetEmployeesForDropdownQuery(formData.locationId, {
-    skip: isDistrictManager || !formData.locationId || !isOpen,
+    skip: isDistrictManager || isBranchManager || !formData.locationId || !isOpen,
   });
 
   // Determine which employees data to use
-  const employeesResponse = isDistrictManager ? dmEmployeesResponse : adminEmployeesResponse;
-  const isLoadingEmployees = isDistrictManager ? dmEmployeesLoading : adminEmployeesLoading;
+  let employeesResponse;
+  let isLoadingEmployees;
+
+  if (isBranchManager) {
+    employeesResponse = bmEmployeesResponse;
+    isLoadingEmployees = bmEmployeesLoading;
+  } else if (isDistrictManager) {
+    employeesResponse = dmEmployeesResponse;
+    isLoadingEmployees = dmEmployeesLoading;
+  } else {
+    employeesResponse = adminEmployeesResponse;
+    isLoadingEmployees = adminEmployeesLoading;
+  }
 
   const employees = employeesResponse?.employees || [];
 
@@ -139,7 +163,7 @@ export const TaskActionModal = ({
       alert("Task title is required");
       return;
     }
-    if (!formData.locationId) {
+    if (!isBranchManager && !formData.locationId) {
       alert("Location is required");
       return;
     }
@@ -219,42 +243,56 @@ export const TaskActionModal = ({
             />
           </div>
 
-          {/* Location Select */}
-          <div className="space-y-1.5 relative">
-            <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
-              Select Store *
-            </label>
-            <div className="relative">
-              <select
-                value={formData.location}
-                onChange={(e) => {
-                  const selectedName = e.target.value;
-                  const selectedLoc = activeLocations.find(
-                    (loc: any) => loc.name === selectedName,
-                  );
-                  setFormData({
-                    ...formData,
-                    location: selectedName,
-                    locationId: selectedLoc?.id || 0,
-                    assignedToIds: [],
-                  });
-                }}
-                disabled={isLoading || locationsLoading}
-                className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white appearance-none outline-none cursor-pointer pr-10 disabled:opacity-50"
-              >
-                <option value="">Select a location...</option>
-                {activeLocations.map((location: any) => (
-                  <option key={location.id} value={location.name}>
-                    {location.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-                size={16}
-              />
+          {/* Location Select - Only show for super admin and district manager */}
+          {!isBranchManager && (
+            <div className="space-y-1.5 relative">
+              <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
+                Select Store *
+              </label>
+              <div className="relative">
+                <select
+                  value={formData.location}
+                  onChange={(e) => {
+                    const selectedName = e.target.value;
+                    const selectedLoc = activeLocations.find(
+                      (loc: any) => loc.name === selectedName,
+                    );
+                    setFormData({
+                      ...formData,
+                      location: selectedName,
+                      locationId: selectedLoc?.id || 0,
+                      assignedToIds: [],
+                    });
+                  }}
+                  disabled={isLoading || locationsLoading}
+                  className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white appearance-none outline-none cursor-pointer pr-10 disabled:opacity-50"
+                >
+                  <option value="">Select a location...</option>
+                  {activeLocations.map((location: any) => (
+                    <option key={location.id} value={location.name}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                  size={16}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* For Branch Manager - Show location as read-only */}
+          {isBranchManager && initialData?.location && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
+                Location
+              </label>
+              <div className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-gray-400">
+                {initialData.location}
+              </div>
+            </div>
+          )}
 
           {/* Due Date */}
           <div className="space-y-1.5">
@@ -289,9 +327,8 @@ export const TaskActionModal = ({
                 setFormData({ ...formData, assignedToIds: ids })
               }
               isLoading={isLoadingEmployees}
-              disabled={isLoading || !formData.locationId}
+              disabled={isLoading || (!isBranchManager && !formData.locationId)}
               locationId={formData.locationId}
-              isDistrictManager={isDistrictManager}
             />
           </div>
 

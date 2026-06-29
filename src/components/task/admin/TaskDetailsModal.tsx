@@ -22,17 +22,23 @@ import {
   Maximize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useGetTaskDetailsQuery,
-  useApproveTaskMutation,
-  useRejectTaskMutation,
-} from "@/redux/services/admin/tasks/taskApi";
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import { useAppSelector } from "@/redux/store";
+import { selectUserRole } from "@/redux/features/auth/authSlice";
+
+// --- Import API Hooks ---
 import {
-  TaskAssignment,
-  TaskDetails,
+  // Super Admin Hooks
+  useGetTaskDetailsQuery as useGetTaskDetailsAdminQuery,
+  useApproveTaskMutation as useApproveTaskAdminMutation,
+  useRejectTaskMutation as useRejectTaskAdminMutation,
+  // District Manager Hooks
+  useGetTasksByDistrictManagerQuery,
+  useApproveTaskMutation as useApproveTaskDMMutation,
+  useRejectTaskMutation as useRejectTaskDMMutation,
 } from "@/redux/services/admin/tasks/taskApi";
+import { useGetManagerTaskDetailsQuery } from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
 
 interface TaskDetailsProps {
   isOpen: boolean;
@@ -105,8 +111,18 @@ const ImageViewerModal = ({
 
 // Individual Assignment Approve/Reject API Calls
 const useAssignmentActions = () => {
-  const [approveTask] = useApproveTaskMutation();
-  const [rejectTask] = useRejectTaskMutation();
+  const userRole = useAppSelector(selectUserRole);
+  const isBranchManager = userRole === "branch_manager";
+  const isDistrictManager = userRole === "district_manager";
+  
+  const [approveTaskAdmin] = useApproveTaskAdminMutation();
+  const [rejectTaskAdmin] = useRejectTaskAdminMutation();
+  const [approveTaskDM] = useApproveTaskDMMutation();
+  const [rejectTaskDM] = useRejectTaskDMMutation();
+
+  // Select appropriate mutations based on role
+  const approveTask = isDistrictManager ? approveTaskDM : approveTaskAdmin;
+  const rejectTask = isDistrictManager ? rejectTaskDM : rejectTaskAdmin;
 
   const approveAssignment = async (taskId: number, assignmentId: number) => {
     try {
@@ -114,9 +130,6 @@ const useAssignmentActions = () => {
         taskId,
         assignmentId,
       };
-      // The API accepts task ID and approves all assignments for that task
-      // For individual assignment approval, we'll need to handle it differently
-      // For now, we'll use the bulk approve API
       const result = await approveTask(body).unwrap();
       return { success: true, message: result.message };
     } catch (error: any) {
@@ -133,9 +146,6 @@ const useAssignmentActions = () => {
     rejectionReason: string,
   ) => {
     try {
-      // The API accepts task ID and rejection reason
-      // This will reject all assignments for the task
-      // For individual assignment rejection, we'll need to handle it differently
       const result = await rejectTask({
         id: taskId,
         rejection_reason: rejectionReason,
@@ -162,10 +172,81 @@ const TaskDetailsModal = ({
   isApproving = false,
   isPendingReview = false,
 }: TaskDetailsProps) => {
+  const userRole = useAppSelector(selectUserRole);
+  const isBranchManager = userRole === "branch_manager";
+  const isDistrictManager = userRole === "district_manager";
+
   console.log("the id:", id);
-  const { data, isLoading, isError, refetch } = useGetTaskDetailsQuery(id, {
-    skip: !isOpen,
+  console.log("User Role:", userRole);
+  console.log("Is Branch Manager:", isBranchManager);
+  console.log("Is District Manager:", isDistrictManager);
+
+  // --- API Queries based on role - Always call all hooks unconditionally ---
+
+  // Branch Manager Task Details
+  const {
+    data: bmData,
+    isLoading: bmLoading,
+    isError: bmError,
+    refetch: bmRefetch,
+  } = useGetManagerTaskDetailsQuery(id, {
+    skip: !isBranchManager || !isOpen,
   });
+
+  // District Manager Task Details - using getTasksByDistrictManagerQuery
+  const {
+    data: dmListData,
+    isLoading: dmListLoading,
+    isError: dmListError,
+    refetch: dmListRefetch,
+  } = useGetTasksByDistrictManagerQuery(
+    {
+      page: 1,
+      search: "",
+    },
+    { skip: !isDistrictManager || !isOpen },
+  );
+
+  // Super Admin Task Details
+  const {
+    data: adminData,
+    isLoading: adminLoading,
+    isError: adminError,
+    refetch: adminRefetch,
+  } = useGetTaskDetailsAdminQuery(id, {
+    skip: isBranchManager || isDistrictManager || !isOpen,
+  });
+
+  // Determine which data to use
+  let data, isLoading, isError, refetch;
+
+  if (isBranchManager) {
+    data = bmData;
+    isLoading = bmLoading;
+    isError = bmError;
+    refetch = bmRefetch;
+  } else if (isDistrictManager) {
+    // For district manager, we need to find the specific task from the list
+    const taskData = dmListData?.tasks?.results?.find(
+      (task: any) => task.task_id === id || task.id === id
+    );
+    data = taskData;
+    isLoading = dmListLoading;
+    isError = dmListError;
+    refetch = dmListRefetch;
+  } else {
+    data = adminData;
+    isLoading = adminLoading;
+    isError = adminError;
+    refetch = adminRefetch;
+  }
+
+  // API Mutations
+  const [approveTask, { isLoading: isBulkApproving }] =
+    useApproveTaskAdminMutation();
+  const [rejectTask, { isLoading: isBulkRejecting }] = useRejectTaskAdminMutation();
+
+  const { approveAssignment, rejectAssignment } = useAssignmentActions();
 
   const [expandedAssignment, setExpandedAssignment] = useState<number | null>(
     null,
@@ -185,13 +266,6 @@ const TaskDetailsModal = ({
   const [rejectingAssignmentId, setRejectingAssignmentId] = useState<
     number | null
   >(null);
-
-  // API Mutations
-  const [approveTask, { isLoading: isBulkApproving }] =
-    useApproveTaskMutation();
-  const [rejectTask, { isLoading: isBulkRejecting }] = useRejectTaskMutation();
-
-  const { approveAssignment, rejectAssignment } = useAssignmentActions();
 
   if (!isOpen) return null;
 
@@ -350,20 +424,20 @@ const TaskDetailsModal = ({
   // Calculate stats for the header
   const totalAssignments = data?.assignments?.length || 0;
   const approvedCount =
-    data?.assignments?.filter((a: TaskAssignment) => a.status === "approved")
+    data?.assignments?.filter((a: any) => a.status === "approved")
       .length || 0;
   const rejectedCount =
-    data?.assignments?.filter((a: TaskAssignment) => a.status === "rejected")
+    data?.assignments?.filter((a: any) => a.status === "rejected")
       .length || 0;
   const pendingCount =
     data?.assignments?.filter(
-      (a: TaskAssignment) =>
+      (a: any) =>
         a.status === "pending" || a.status === "awaiting_review",
     ).length || 0;
 
   // Check if there are any pending/awaiting_review assignments
   const hasPendingAssignments = data?.assignments?.some(
-    (a: TaskAssignment) =>
+    (a: any) =>
       a.status === "pending" || a.status === "awaiting_review",
   );
 
@@ -501,17 +575,17 @@ const TaskDetailsModal = ({
                               "text-[10px] font-bold px-3 py-1.5 rounded-lg border uppercase tracking-wider",
                               getStatusColor(
                                 data.assignments?.some(
-                                  (a: TaskAssignment) =>
+                                  (a: any) =>
                                     a.status === "rejected",
                                 )
                                   ? "rejected"
                                   : data.assignments?.some(
-                                        (a: TaskAssignment) =>
+                                        (a: any) =>
                                           a.status === "awaiting_review",
                                       )
                                     ? "awaiting_review"
                                     : data.assignments?.every(
-                                          (a: TaskAssignment) =>
+                                          (a: any) =>
                                             a.status === "approved",
                                         )
                                       ? "approved"
@@ -520,16 +594,16 @@ const TaskDetailsModal = ({
                             )}
                           >
                             {data.assignments?.some(
-                              (a: TaskAssignment) => a.status === "rejected",
+                              (a: any) => a.status === "rejected",
                             )
                               ? "Rejected"
                               : data.assignments?.some(
-                                    (a: TaskAssignment) =>
+                                    (a: any) =>
                                       a.status === "awaiting_review",
                                   )
                                 ? "Awaiting Review"
                                 : data.assignments?.every(
-                                      (a: TaskAssignment) =>
+                                      (a: any) =>
                                         a.status === "approved",
                                     )
                                   ? "Approved"
@@ -626,10 +700,17 @@ const TaskDetailsModal = ({
                   </div>
 
                   <div className="space-y-4">
-                    {data.assignments?.map((assignment: TaskAssignment, index) => {
-                      const isExpanded = expandedAssignment === assignment.id;
-                      const isApproving = individualApproving === assignment.id;
-                      const isRejecting = individualRejecting === assignment.id;
+                    {data.assignments?.map((assignment: any, index: number) => {
+                      const isExpanded = expandedAssignment === assignment.assignment_id || expandedAssignment === assignment.id;
+                      const isApproving = individualApproving === assignment.assignment_id || individualApproving === assignment.id;
+                      const isRejecting = individualRejecting === assignment.assignment_id || individualRejecting === assignment.id;
+
+                      // Handle different ID field names
+                      const assignmentId = assignment.assignment_id || assignment.id;
+                      const employeeData = assignment.employee || {};
+                      const employeeName = employeeData.name || "";
+                      const employeeRole = employeeData.role_display || employeeData.role || "";
+                      const employeeEmail = employeeData.email || "";
 
                       return (
                         <div
@@ -640,7 +721,7 @@ const TaskDetailsModal = ({
                           <div
                             className="p-4 cursor-pointer hover:bg-[#1A1A1A] transition-colors"
                             onClick={() =>
-                              toggleAssignmentExpand(assignment.id)
+                              toggleAssignmentExpand(assignmentId)
                             }
                           >
                             <div className="flex items-center justify-between gap-4">
@@ -651,15 +732,14 @@ const TaskDetailsModal = ({
                                     getStatusColor(assignment.status),
                                   )}
                                 >
-                                  {getInitials(assignment.employee.name)}
+                                  {getInitials(employeeName)}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="text-white font-semibold text-sm truncate">
-                                    {assignment.employee.name}
+                                    {employeeName}
                                   </p>
                                   <p className="text-gray-500 text-[10px] uppercase tracking-wider">
-                                    {assignment.employee.role_display ||
-                                      assignment.employee.role}
+                                    {employeeRole}
                                   </p>
                                 </div>
                               </div>
@@ -671,7 +751,7 @@ const TaskDetailsModal = ({
                                     getStatusColor(assignment.status),
                                   )}
                                 >
-                                  {assignment.status_display}
+                                  {assignment.status_display || assignment.status}
                                 </span>
                                 <button className="text-gray-500 hover:text-white transition-colors">
                                   {isExpanded ? (
@@ -698,7 +778,7 @@ const TaskDetailsModal = ({
                                         size={14}
                                         className="text-gray-600"
                                       />
-                                      {assignment.employee.email}
+                                      {employeeEmail}
                                     </p>
                                   </div>
                                   <div>
@@ -723,7 +803,7 @@ const TaskDetailsModal = ({
                                       onClick={() =>
                                         openImageViewer(
                                           assignment.photo_url!,
-                                          assignment.employee.name,
+                                          employeeName,
                                         )
                                       }
                                     >
@@ -731,7 +811,7 @@ const TaskDetailsModal = ({
                                         width={800}
                                         height={600}
                                         src={assignment.photo_url}
-                                        alt={`${assignment.employee.name} submission`}
+                                        alt={`${employeeName} submission`}
                                         className="w-full h-48 md:h-64 object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                                       />
 
@@ -796,7 +876,7 @@ const TaskDetailsModal = ({
                                   <div className="flex gap-3 pt-2">
                                     <button
                                       onClick={() =>
-                                        handleIndividualApprove(assignment.id)
+                                        handleIndividualApprove(assignmentId)
                                       }
                                       disabled={isApproving || isRejecting}
                                       className="flex-1 bg-emerald-500/5 border border-emerald-500/20 text-emerald-500 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-500/10 transition-all active:scale-95 disabled:opacity-50"
@@ -808,7 +888,7 @@ const TaskDetailsModal = ({
                                     </button>
                                     <button
                                       onClick={() =>
-                                        handleIndividualReject(assignment.id)
+                                        handleIndividualReject(assignmentId)
                                       }
                                       disabled={isApproving || isRejecting}
                                       className="flex-1 bg-rose-500/5 border border-rose-500/20 text-rose-500 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-rose-500/10 transition-all active:scale-95 disabled:opacity-50"

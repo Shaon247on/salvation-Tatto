@@ -29,10 +29,9 @@ export default function TaskPage() {
     case "super_admin":
     // return <AdminView />;
     case "district_manager":
+    case "branch_manager":
       return <TaskManagementSystem />;
     // return <ManagerView />;
-    case "branch_manager":
-      return <BranchManagerView />;
     default:
       return <div>Access Denied: Role not recognized.</div>;
   }

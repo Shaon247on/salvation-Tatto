@@ -100,7 +100,7 @@ export const ROLE_PERMISSIONS: RolePermissions[] = [
       "verifications:reject",
       // Reports
       "reports:view",
-
+      "notifications:view",
       // Performance
       // "performance:view",
 

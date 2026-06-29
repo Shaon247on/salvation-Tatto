@@ -10,6 +10,7 @@ import {
 } from "@/redux/services/admin/tasks/taskApi";
 import { useAppSelector } from "@/redux/store";
 import { selectUserRole } from "@/redux/features/auth/authSlice";
+import { useGetManagerEmployeesByBranchManagerQuery } from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
 
 interface EmployeeMultiSelectProps {
   employees?: LocationEmployee[];
@@ -27,14 +28,13 @@ export function EmployeeMultiSelect({
   onChange,
   isLoading,
   disabled,
-  placeholder = "Select a store first",
+  placeholder = "Select employees...",
   locationId,
 }: EmployeeMultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const userRole = useAppSelector(selectUserRole);
   const isDistrictManager = userRole === "district_manager";
-
-  console.log("the user:", userRole);
+  const isBranchManager = userRole === "branch_manager";
 
   // Normalize incoming selectedIds to an array of numbers
   const normalizedSelectedIds = useMemo(() => {
@@ -50,7 +50,16 @@ export function EmployeeMultiSelect({
       .filter((n) => !Number.isNaN(n)) as number[];
   }, [selectedIds]);
 
-  // Always call both hooks (Rules of Hooks)
+  // Always call all hooks (Rules of Hooks)
+  // Branch Manager
+  const {
+    data: bmEmployeesResp,
+    isLoading: isLoadingBM,
+  } = useGetManagerEmployeesByBranchManagerQuery(undefined, {
+    skip: !isBranchManager || (employees && employees.length > 0),
+  });
+
+  // District Manager
   const {
     data: dmEmployeesResp,
     isLoading: isLoadingDM,
@@ -58,20 +67,30 @@ export function EmployeeMultiSelect({
     skip: !isDistrictManager || !locationId || (employees && employees.length > 0),
   });
 
+  // Super Admin
   const {
     data: adminEmployeesResp,
     isLoading: isLoadingAdmin,
   } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
-    skip: isDistrictManager || !locationId || (employees && employees.length > 0),
+    skip: isDistrictManager || isBranchManager || !locationId || (employees && employees.length > 0),
   });
 
   // Determine which data to use based on role
-  const topFetchedEmployeesResp = isDistrictManager ? dmEmployeesResp : adminEmployeesResp;
-  const isLoadingTopFetched = isDistrictManager ? isLoadingDM : isLoadingAdmin;
+  let topFetchedEmployeesResp;
+  let isLoadingTopFetched;
 
-  console.log("the fetched employees:", topFetchedEmployeesResp);
+  if (isBranchManager) {
+    topFetchedEmployeesResp = bmEmployeesResp;
+    isLoadingTopFetched = isLoadingBM;
+  } else if (isDistrictManager) {
+    topFetchedEmployeesResp = dmEmployeesResp;
+    isLoadingTopFetched = isLoadingDM;
+  } else {
+    topFetchedEmployeesResp = adminEmployeesResp;
+    isLoadingTopFetched = isLoadingAdmin;
+  }
 
-  // Handle the new response structure - employees is directly in the response
+  // Handle the response structure - employees is directly in the response
   const employeesSource = (employees && employees.length > 0)
     ? employees
     : topFetchedEmployeesResp?.employees || [];
@@ -82,7 +101,7 @@ export function EmployeeMultiSelect({
   );
 
   // Simple initials function using the name field directly
-  const getInitials = (emp: LocationEmployee) => {
+  const getInitials = (emp: any) => {
     if (!emp || !emp.name) return "?";
     
     const nameParts = emp.name.split(' ');
@@ -152,6 +171,7 @@ export function EmployeeMultiSelect({
         onChange={onChange}
         locationId={locationId}
         isDistrictManager={isDistrictManager}
+        isBranchManager={isBranchManager}
       />
     </div>
   );
@@ -167,6 +187,7 @@ interface EmployeeSelectDialogProps {
   onChange: (ids: number[]) => void;
   locationId?: number;
   isDistrictManager?: boolean;
+  isBranchManager?: boolean;
 }
 
 function EmployeeSelectDialog({
@@ -177,12 +198,22 @@ function EmployeeSelectDialog({
   onChange,
   locationId,
   isDistrictManager = false,
+  isBranchManager = false,
 }: EmployeeSelectDialogProps) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [draftIds, setDraftIds] = useState<number[]>(selectedIds);
 
-  // Always call both hooks (Rules of Hooks)
+  // Always call all hooks (Rules of Hooks)
+  // Branch Manager
+  const {
+    data: bmEmployeesResp,
+    isLoading: isLoadingBM,
+  } = useGetManagerEmployeesByBranchManagerQuery(undefined, {
+    skip: !isBranchManager || (employees && employees.length > 0),
+  });
+
+  // District Manager
   const {
     data: dmEmployeesResp,
     isLoading: isLoadingDM,
@@ -190,18 +221,30 @@ function EmployeeSelectDialog({
     skip: !isDistrictManager || !locationId || (employees && employees.length > 0),
   });
 
+  // Super Admin
   const {
     data: adminEmployeesResp,
     isLoading: isLoadingAdmin,
   } = useGetEmployeesForDropdownQuery(locationId ?? 0, {
-    skip: isDistrictManager || !locationId || (employees && employees.length > 0),
+    skip: isDistrictManager || isBranchManager || !locationId || (employees && employees.length > 0),
   });
 
   // Determine which data to use based on role
-  const fetchedEmployeesResp = isDistrictManager ? dmEmployeesResp : adminEmployeesResp;
-  const isLoadingFetchedEmployees = isDistrictManager ? isLoadingDM : isLoadingAdmin;
+  let fetchedEmployeesResp;
+  let isLoadingFetchedEmployees;
 
-  // Handle the new response structure - employees is directly in the response
+  if (isBranchManager) {
+    fetchedEmployeesResp = bmEmployeesResp;
+    isLoadingFetchedEmployees = isLoadingBM;
+  } else if (isDistrictManager) {
+    fetchedEmployeesResp = dmEmployeesResp;
+    isLoadingFetchedEmployees = isLoadingDM;
+  } else {
+    fetchedEmployeesResp = adminEmployeesResp;
+    isLoadingFetchedEmployees = isLoadingAdmin;
+  }
+
+  // Handle the response structure - employees is directly in the response
   const dialogEmployees = employees && employees.length 
     ? employees 
     : (fetchedEmployeesResp?.employees || []);
@@ -249,7 +292,7 @@ function EmployeeSelectDialog({
   };
 
   // Simple initials function using the name field directly
-  const getInitials = (emp: LocationEmployee) => {
+  const getInitials = (emp: any) => {
     if (!emp || !emp.name) return "?";
     
     const nameParts = emp.name.split(' ');

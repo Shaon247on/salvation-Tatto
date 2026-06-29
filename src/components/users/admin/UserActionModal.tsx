@@ -57,15 +57,6 @@ interface UserActionModalProps {
   isLoading?: boolean;
 }
 
-// const DEFAULT_SCHEDULE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-//   (day) => ({
-//     day,
-//     enabled: true,
-//     start: "09:00",
-//     end: "20:00",
-//   }),
-// );
-
 const TIME_OPTIONS = [
   "5 AM",
   "6 AM",
@@ -232,23 +223,50 @@ export const UserActionModal = ({
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.fullName.trim()) newErrors.fullName = "Full name is required";
+    
+    // Full name validation
+    if (!formData.fullName.trim()) {
+      newErrors.fullName = "Full name is required";
+    }
+    
+    // Email validation
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Invalid email format";
     }
-    if (!isEditMode && !formData.password)
-      newErrors.password = "Password is required";
-    if (!formData.role) newErrors.role = "Role is required";
-    if (!formData.location) newErrors.location = "Location is required";
-    // schedule validation
+    
+    // Password validation
+    if (!isEditMode) {
+      if (!formData.password) {
+        newErrors.password = "Password is required";
+      } else if (formData.password.length < 6) {
+        newErrors.password = "Password must be at least 6 characters";
+      }
+    } else if (formData.password && formData.password.length > 0 && formData.password.length < 6) {
+      // Only validate password in edit mode if user is changing it
+      newErrors.password = "Password must be at least 6 characters";
+    }
+    
+    // Role validation
+    if (!formData.role) {
+      newErrors.role = "Role is required";
+    }
+    
+    // Location validation
+    if (!formData.location) {
+      newErrors.location = "Location is required";
+    }
+    
+    // Schedule validation
     const schedErrors: Record<number, string> = {};
     schedule.forEach((row, idx) => {
       if (!row.enabled) return;
       const sMin = timeStringToMinutes(row.start);
       const eMin = timeStringToMinutes(row.end);
-      if (sMin >= eMin) schedErrors[idx] = "Start time must be before end time";
+      if (sMin >= eMin) {
+        schedErrors[idx] = "Start time must be before end time";
+      }
     });
 
     setScheduleErrors(schedErrors);

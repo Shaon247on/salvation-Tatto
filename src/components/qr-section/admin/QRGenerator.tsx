@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Maximize2, RefreshCw, ChevronDown, AlertCircle } from "lucide-react";
+import { Maximize2, RefreshCw, ChevronDown, AlertCircle, Clock } from "lucide-react";
 import {
   useGenerateAdminQrMutation,
   useGetQrAdminSummaryQuery,
@@ -14,23 +14,12 @@ import { useAppSelector } from "@/redux/store";
 import { selectCurrentToken } from "@/redux/features/auth/authSlice";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
 
-interface RefreshIntervalOption {
-  value: number;
-  label: string;
-}
-
-const REFRESH_INTERVALS: RefreshIntervalOption[] = [
-  { value: 3, label: "Every 3 minutes" },
-  { value: 5, label: "Every 5 minutes" },
-  { value: 10, label: "Every 10 minutes" },
-  { value: 30, label: "Every 30 minutes" },
-];
-
 const QRGenerator = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [allLocation, setAllLocation] = useState<number | null>(null);
-  const [selectedInterval, setSelectedInterval] = useState<number>(180);
+  const [minutes, setMinutes] = useState<number>(3);
+  const [seconds, setSeconds] = useState<number>(0);
   const [generatedQr, setGeneratedQr] = useState<QrSession | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,9 +38,12 @@ const QRGenerator = () => {
   const [generateQr, { isLoading: isGenerating }] =
     useGenerateAdminQrMutation();
 
-  // Countdown timer
+  // Countdown timer - use duration_seconds from API response
   useEffect(() => {
     if (!generatedQr) return;
+
+    // Set initial time from duration_seconds
+    setTimeLeft(generatedQr.duration_seconds);
 
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -63,19 +55,11 @@ const QRGenerator = () => {
     return () => clearInterval(timer);
   }, [generatedQr]);
 
-  // Set initial time when QR is generated
-  useEffect(() => {
-    if (generatedQr) {
-      setTimeLeft(generatedQr.refresh_interval * 60);
-    }
-  }, [generatedQr]);
-
   const formatTime = (seconds: number) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-};
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
 
   const handleGenerateQr = async () => {
     setError(null);
@@ -85,14 +69,22 @@ const QRGenerator = () => {
       return;
     }
 
+    // Validate that at least one of minutes or seconds is > 0
+    if (minutes === 0 && seconds === 0) {
+      setError("Please set a refresh interval greater than 0");
+      return;
+    }
+
     try {
       const result = await generateQr({
-        refresh_interval: selectedInterval,
         location: allLocation,
+        minutes: minutes,
+        seconds: seconds,
       }).unwrap();
 
       setGeneratedQr(result.qr_session);
-      setTimeLeft(result.qr_session.refresh_interval * 60);
+      // Use duration_seconds from API response for countdown
+      setTimeLeft(result.qr_session.duration_seconds);
     } catch (err: any) {
       setError(err?.data?.message || "Failed to generate QR code");
       setGeneratedQr(null);
@@ -100,6 +92,12 @@ const QRGenerator = () => {
   };
 
   const qrValue = generatedQr?.token || "https://your-app.com/verify/123";
+
+  // Generate minute options (0-59)
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i);
+  
+  // Generate second options (0-59)
+  const secondOptions = Array.from({ length: 60 }, (_, i) => i);
 
   return (
     <div className="bg-[#0A0A0A] border border-[#968B79]/60 rounded-2xl p-8">
@@ -183,28 +181,70 @@ const QRGenerator = () => {
             </div>
           </div>
 
-          {/* Refresh Interval Dropdown */}
+          {/* QR Refresh Interval - Custom Minutes & Seconds */}
           <div className="space-y-2">
             <label className="text-gray-400 text-xs font-bold uppercase tracking-widest ml-1">
               QR Refresh Interval
             </label>
-            <div className="relative">
-              <select
-                value={selectedInterval}
-                onChange={(e) => setSelectedInterval(Number(e.target.value))}
-                className="w-full bg-black border border-[#968B79]/60 text-white rounded-xl py-3 px-4 text-sm appearance-none focus:outline-none focus:border-white/20 cursor-pointer"
-              >
-                {REFRESH_INTERVALS.map((interval) => (
-                  <option key={interval.value} value={interval.value}>
-                    {interval.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
-                size={16}
-              />
+            
+            <div className="flex gap-4">
+              {/* Minutes Select */}
+              <div className="flex-1 relative">
+                <label className="text-[10px] text-gray-500 mb-1 block">
+                  Minutes
+                </label>
+                <div className="relative">
+                  <select
+                    value={minutes}
+                    onChange={(e) => setMinutes(Number(e.target.value))}
+                    className="w-full bg-black border border-[#968B79]/60 text-white rounded-xl py-3 px-4 text-sm appearance-none focus:outline-none focus:border-white/20 cursor-pointer"
+                  >
+                    {minuteOptions.map((m) => (
+                      <option key={m} value={m}>
+                        {m} {m === 1 ? "min" : "mins"}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                    size={16}
+                  />
+                </div>
+              </div>
+
+              {/* Seconds Select */}
+              <div className="flex-1 relative">
+                <label className="text-[10px] text-gray-500 mb-1 block">
+                  Seconds
+                </label>
+                <div className="relative">
+                  <select
+                    value={seconds}
+                    onChange={(e) => setSeconds(Number(e.target.value))}
+                    className="w-full bg-black border border-[#968B79]/60 text-white rounded-xl py-3 px-4 text-sm appearance-none focus:outline-none focus:border-white/20 cursor-pointer"
+                  >
+                    {secondOptions.map((s) => (
+                      <option key={s} value={s}>
+                        {s} {s === 1 ? "sec" : "secs"}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+                    size={16}
+                  />
+                </div>
+              </div>
             </div>
+
+            {/* Display Total Interval */}
+            {(minutes > 0 || seconds > 0) && (
+              <p className="text-[10px] text-gray-400 mt-1">
+                Total: {minutes > 0 ? `${minutes} minute${minutes > 1 ? 's' : ''}` : ''}
+                {minutes > 0 && seconds > 0 ? ' and ' : ''}
+                {seconds > 0 ? `${seconds} second${seconds > 1 ? 's' : ''}` : ''}
+              </p>
+            )}
           </div>
 
           <p className="text-gray-500 text-xs leading-relaxed max-w-xs">
@@ -236,6 +276,14 @@ const QRGenerator = () => {
                 <p className="text-white text-xs">
                   <span className="text-gray-500">Created:</span>{" "}
                   {new Date(generatedQr.created_at).toLocaleString()}
+                </p>
+                <p className="text-white text-xs">
+                  <span className="text-gray-500">Duration:</span>{" "}
+                  {generatedQr.duration_display}
+                </p>
+                <p className="text-white text-xs">
+                  <span className="text-gray-500">Expires:</span>{" "}
+                  {new Date(generatedQr.expires_at).toLocaleString()}
                 </p>
               </div>
             </div>

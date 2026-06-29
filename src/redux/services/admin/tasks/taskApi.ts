@@ -285,6 +285,16 @@ export const taskApi = baseApi.injectEndpoints({
       providesTags: ["Tasks"],
     }),
 
+    getTasksDetailsByDistrictManager: builder.query<
+      TaskListResponse,
+      { id: number }
+    >({
+      query: ({id}) => ({
+        url: `/admin/district-manager/tasks/${id}`,
+      }),
+      providesTags: ["Tasks"],
+    }),
+
     // GET: Locations for District Manager
     getLocationsByDistrictManager: builder.query<LocationResponse, void>({
       query: () => "/admin/district-manager/locations/",
@@ -354,6 +364,7 @@ export const {
 
   // District Manager Hooks
   useGetTasksByDistrictManagerQuery,
+  useGetTasksDetailsByDistrictManagerQuery,
   useGetLocationsByDistrictManagerQuery,
   useGetEmployeesByLocationByDistrictManagerQuery,
   useCreateTaskByDistrictManagerMutation,
