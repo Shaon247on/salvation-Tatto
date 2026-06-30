@@ -1,21 +1,20 @@
-// /* eslint-disable react-hooks/exhaustive-deps */
-
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ChevronDown, RotateCcw, Camera } from "lucide-react";
+import { X, ChevronDown, RotateCcw, Camera, CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/redux/store";
 import { selectCurrentToken, selectUserRole } from "@/redux/features/auth/authSlice";
 import { useGetLocationsQuery } from "@/redux/services/admin/location/locationApi";
-import { 
+import {
   useGetEmployeesForDropdownQuery,
   useGetLocationsByDistrictManagerQuery,
   useGetEmployeesByLocationByDistrictManagerQuery,
 } from "@/redux/services/admin/tasks/taskApi";
 import { EmployeeMultiSelect } from "./EmployeeMultiSelect";
 import { useGetManagerEmployeesByBranchManagerQuery } from "@/redux/services/branchManager/task/theBranchManagerTaskApi";
+import { RecurrencePicker, RecurrenceValue, describeRecurrence } from "./RecurrencePicker";
 
 interface TaskActionModalProps {
   isOpen: boolean;
@@ -24,6 +23,18 @@ interface TaskActionModalProps {
   onSave: (data: any) => void;
   isLoading?: boolean;
 }
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const emptyRecurrence = (): RecurrenceValue => ({
+  startDate: todayISO(),
+  isRecurring: false,
+  frequency: "daily",
+  recurrence: null,
+});
 
 export const TaskActionModal = ({
   isOpen,
@@ -35,15 +46,9 @@ export const TaskActionModal = ({
   const isEditMode = !!initialData;
   const token = useAppSelector(selectCurrentToken);
   const userRole = useAppSelector(selectUserRole);
-  
-  // Determine user role
+
   const isDistrictManager = userRole === "district_manager";
   const isBranchManager = userRole === "branch_manager";
-
-  console.log("Editable task:", initialData);
-  console.log("User Role:", userRole);
-  console.log("Is District Manager:", isDistrictManager);
-  console.log("Is Branch Manager:", isBranchManager);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -51,71 +56,97 @@ export const TaskActionModal = ({
     location: "",
     locationId: 0,
     assignedToIds: [] as number[],
-    dueDate: "",
-    isRecurring: false,
-    frequency: "daily",
     requirePhoto: false,
   });
 
-  // --- CRITICAL FIX: Always call all hooks unconditionally ---
+  // Start date + recurrence now live in their own value object, owned by
+  // RecurrencePicker, instead of separate dueDate / frequency fields.
+  const [recurrenceValue, setRecurrenceValue] = useState<RecurrenceValue>(emptyRecurrence());
+  const [isRecurrencePickerOpen, setIsRecurrencePickerOpen] = useState(false);
 
-  // Fetch locations based on role - Only super admin and district manager need locations
   const {
     data: dmLocationsResponse,
     isLoading: dmLocationsLoading,
-  } = useGetLocationsByDistrictManagerQuery(undefined, { 
-    skip: !isDistrictManager || !token 
+  } = useGetLocationsByDistrictManagerQuery(undefined, {
+    skip: !isDistrictManager || !token,
   });
 
   const {
     data: adminLocationsResponse,
     isLoading: adminLocationsLoading,
-  } = useGetLocationsQuery(undefined, { 
-    skip: isDistrictManager || isBranchManager || !token 
+  } = useGetLocationsQuery(undefined, {
+    skip: isDistrictManager || isBranchManager || !token,
   });
 
-  // Determine which locations data to use
   const locationsResponse = isDistrictManager ? dmLocationsResponse : adminLocationsResponse;
   const locationsLoading = isDistrictManager ? dmLocationsLoading : adminLocationsLoading;
 
-  const activeLocations = locationsResponse?.locations?.filter((loc: any) => 
-    loc.status === "active" || !loc.status // District manager locations might not have status field
-  ) || [];
+  const activeLocations =
+    locationsResponse?.locations?.filter((loc: any) => loc.status === "active" || !loc.status) || [];
 
-  // --- CRITICAL FIX: Sync initialData to local state when modal opens ---
+  // --- Sync initialData to local state when modal opens ---
   useEffect(() => {
     if (isOpen) {
       setFormData({
         title: initialData?.taskName || "",
         description: initialData?.description || "",
-        location: isBranchManager ? (initialData?.location || "") : (initialData?.location || ""),
-        locationId: isBranchManager ? (initialData?.locationId || 0) : (initialData?.locationId || 0),
-
-        // initialData.assignedToIds can be an array of objects {id,name} or numbers
+        location: initialData?.location || "",
+        locationId: initialData?.locationId || 0,
         assignedToIds: Array.isArray(initialData?.assignedToIds)
-          ? initialData.assignedToIds.map((a: any) =>
-              typeof a === "number" ? a : a?.id ? Number(a.id) : NaN,
-            ).filter((n: number) => !Number.isNaN(n))
+          ? initialData.assignedToIds
+              .map((a: any) => (typeof a === "number" ? a : a?.id ? Number(a.id) : NaN))
+              .filter((n: number) => !Number.isNaN(n))
           : initialData?.assignedToIds
-          ? [
-              typeof initialData.assignedToIds === "number"
-                ? initialData.assignedToIds
-                : initialData.assignedToIds.id
-                ? Number(initialData.assignedToIds.id)
-                : NaN,
-            ].filter((n) => !Number.isNaN(n))
-          : [],
-
-        dueDate: initialData?.dueDate || "",
-        isRecurring: initialData?.isRecurring || false,
-        frequency: initialData?.frequency || "daily",
+            ? [
+                typeof initialData.assignedToIds === "number"
+                  ? initialData.assignedToIds
+                  : initialData.assignedToIds.id
+                    ? Number(initialData.assignedToIds.id)
+                    : NaN,
+              ].filter((n) => !Number.isNaN(n))
+            : [],
         requirePhoto: initialData?.requirePhoto || false,
       });
-    }
-  }, [initialData, isOpen, isBranchManager]);
 
-  // Fetch employees based on role - Always call all hooks
-  // Branch Manager
+      // initialData carries either the legacy flat shape (dueDate/frequency)
+      // or the new shape (startDate/recurrence) depending on what the list
+      // page mapped from the API response — handle both. The live API still
+      // returns the date under `due_date` (mapped to `dueDate` by the DTO),
+      // never `startDate`, so dueDate must come first in the fallback chain.
+      const isRecurring = initialData?.isRecurring || false;
+      const startDate = initialData?.dueDate || initialData?.startDate || todayISO();
+      const apiFrequency = (initialData?.frequency && initialData.frequency !== "none"
+        ? initialData.frequency
+        : initialData?.recurrence?.frequency || "daily") as any;
+
+      // Some existing tasks are recurring but were saved before the
+      // recurrence object existed, so `recurrence` comes back as null even
+      // though `is_recurring` is true and `frequency` is set (e.g. "daily").
+      // In that case fall back to a sane default recurrence (interval 1,
+      // anchored on the start date) so the picker still opens correctly.
+      const apiRecurrence = initialData?.recurrence;
+      const parsedStart = (() => {
+        const [y, m, d] = startDate.split("-").map(Number);
+        return new Date(y, (m || 1) - 1, d || 1);
+      })();
+
+      setRecurrenceValue({
+        startDate,
+        isRecurring,
+        frequency: isRecurring ? apiFrequency : "daily",
+        recurrence: isRecurring
+          ? {
+              frequency: apiFrequency,
+              interval: apiRecurrence?.interval || 1,
+              day_of_month:
+                apiRecurrence?.day_of_month ?? (apiFrequency === "monthly" ? parsedStart.getDate() : undefined),
+              weekdays: apiRecurrence?.weekdays ?? undefined,
+            }
+          : null,
+      });
+    }
+  }, [initialData, isOpen]);
+
   const {
     data: bmEmployeesResponse,
     isLoading: bmEmployeesLoading,
@@ -123,7 +154,6 @@ export const TaskActionModal = ({
     skip: !isBranchManager || !isOpen,
   });
 
-  // District Manager
   const {
     data: dmEmployeesResponse,
     isLoading: dmEmployeesLoading,
@@ -131,7 +161,6 @@ export const TaskActionModal = ({
     skip: !isDistrictManager || !formData.locationId || !isOpen,
   });
 
-  // Super Admin
   const {
     data: adminEmployeesResponse,
     isLoading: adminEmployeesLoading,
@@ -139,7 +168,6 @@ export const TaskActionModal = ({
     skip: isDistrictManager || isBranchManager || !formData.locationId || !isOpen,
   });
 
-  // Determine which employees data to use
   let employeesResponse;
   let isLoadingEmployees;
 
@@ -171,20 +199,26 @@ export const TaskActionModal = ({
       alert("At least one employee must be assigned");
       return;
     }
-    if (!formData.dueDate) {
-      alert("Due date is required");
+    if (!recurrenceValue.startDate) {
+      alert("Start date is required");
       return;
     }
 
-    onSave(formData);
+    // Frequency is always attached to the payload, recurring or not —
+    // "none" when the task doesn't repeat, otherwise the resolved
+    // daily/weekly/monthly/yearly value.
+    onSave({
+      ...formData,
+      startDate: recurrenceValue.startDate,
+      isRecurring: recurrenceValue.isRecurring,
+      frequency: recurrenceValue.isRecurring ? recurrenceValue.frequency : "none",
+      recurrence: recurrenceValue.isRecurring ? recurrenceValue.recurrence : null,
+    });
   };
 
   return (
     <div className="fixed inset-0 z-110 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/90 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full max-w-lg bg-[#0D0D0D] border border-[#262626] rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[95vh]">
         {/* Header */}
@@ -194,9 +228,7 @@ export const TaskActionModal = ({
               {isEditMode ? "Edit Task" : "Create Task"}
             </h2>
             <p className="text-gray-500 text-xs mt-0.5">
-              {isEditMode
-                ? "Update task details and assignments"
-                : "Create a new task assignment"}
+              {isEditMode ? "Update task details and assignments" : "Create a new task assignment"}
             </p>
           </div>
           <button
@@ -218,9 +250,7 @@ export const TaskActionModal = ({
             <input
               type="text"
               value={formData.title}
-              onChange={(e) =>
-                setFormData({ ...formData, title: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               placeholder="e.g. Sanitize Tattoo Stations"
               disabled={isLoading}
               className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white focus:border-[#404040] outline-none transition-all disabled:opacity-50"
@@ -234,9 +264,7 @@ export const TaskActionModal = ({
             </label>
             <textarea
               value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Describe what needs to be done..."
               disabled={isLoading}
               className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white min-h-25 resize-none outline-none focus:border-[#404040] disabled:opacity-50"
@@ -254,9 +282,7 @@ export const TaskActionModal = ({
                   value={formData.location}
                   onChange={(e) => {
                     const selectedName = e.target.value;
-                    const selectedLoc = activeLocations.find(
-                      (loc: any) => loc.name === selectedName,
-                    );
+                    const selectedLoc = activeLocations.find((loc: any) => loc.name === selectedName);
                     setFormData({
                       ...formData,
                       location: selectedName,
@@ -294,19 +320,31 @@ export const TaskActionModal = ({
             </div>
           )}
 
-          {/* Due Date */}
-          <div className="space-y-1.5">
+          {/* Start date / recurrence trigger — replaces the old Due Date input.
+              Opens RecurrencePicker as a popover, the same pattern used by
+              EmployeeMultiSelect. */}
+          <div className="space-y-1.5 relative">
             <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1">
-              Due Date *
+              Start Date *
             </label>
-            <input
-              type="date"
-              value={formData.dueDate}
-              onChange={(e) =>
-                setFormData({ ...formData, dueDate: e.target.value })
-              }
+            <button
+              type="button"
+              onClick={() => !isLoading && setIsRecurrencePickerOpen((v) => !v)}
               disabled={isLoading}
-              className="w-full bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white outline-none focus:border-[#404040] scheme-dark disabled:opacity-50"
+              className="w-full flex items-center justify-between bg-black border border-[#262626] rounded-xl p-3.5 text-sm text-white outline-none focus:border-[#404040] disabled:opacity-50"
+            >
+              <span className="flex items-center gap-2">
+                <CalendarClock size={15} className="text-gray-500" />
+                {describeRecurrence(recurrenceValue)}
+              </span>
+              <ChevronDown size={16} className="text-gray-500" />
+            </button>
+
+            <RecurrencePicker
+              isOpen={isRecurrencePickerOpen}
+              onClose={() => setIsRecurrencePickerOpen(false)}
+              value={recurrenceValue}
+              onChange={(next) => setRecurrenceValue(next)}
             />
           </div>
 
@@ -315,17 +353,13 @@ export const TaskActionModal = ({
             <label className="text-[10px] uppercase font-bold text-gray-500 tracking-widest ml-1 flex items-center justify-between">
               <span>Assign To *</span>
               {formData.assignedToIds.length > 0 && (
-                <span className="text-[#c4a47c]">
-                  {formData.assignedToIds.length} selected
-                </span>
+                <span className="text-[#c4a47c]">{formData.assignedToIds.length} selected</span>
               )}
             </label>
             <EmployeeMultiSelect
               employees={employees}
               selectedIds={formData.assignedToIds}
-              onChange={(ids) =>
-                setFormData({ ...formData, assignedToIds: ids })
-              }
+              onChange={(ids) => setFormData({ ...formData, assignedToIds: ids })}
               isLoading={isLoadingEmployees}
               disabled={isLoading || (!isBranchManager && !formData.locationId)}
               locationId={formData.locationId}
@@ -338,13 +372,24 @@ export const TaskActionModal = ({
             <div
               className={cn(
                 "flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer",
-                formData.isRecurring
-                  ? "bg-white/3 border-white/10"
-                  : "bg-black border-[#262626]",
+                recurrenceValue.isRecurring ? "bg-white/3 border-white/10" : "bg-black border-[#262626]",
               )}
               onClick={() =>
                 !isLoading &&
-                setFormData({ ...formData, isRecurring: !formData.isRecurring })
+                setRecurrenceValue((prev) => {
+                  const nextIsRecurring = !prev.isRecurring;
+                  if (!nextIsRecurring) {
+                    return { ...prev, isRecurring: false, recurrence: null };
+                  }
+                  // Turning recurrence on: default to daily, interval 1,
+                  // anchored on the currently selected start date.
+                  return {
+                    ...prev,
+                    isRecurring: true,
+                    frequency: "daily",
+                    recurrence: { frequency: "daily", interval: 1 },
+                  };
+                })
               }
             >
               <div className="flex items-center gap-4">
@@ -359,57 +404,40 @@ export const TaskActionModal = ({
               <div
                 className={cn(
                   "w-12 h-6 rounded-full relative transition-all duration-300",
-                  formData.isRecurring ? "bg-emerald-500" : "bg-[#262626]",
+                  recurrenceValue.isRecurring ? "bg-emerald-500" : "bg-[#262626]",
                 )}
               >
                 <div
                   className={cn(
                     "absolute top-1 w-4 h-4 rounded-full transition-all duration-300 shadow-sm",
-                    formData.isRecurring
-                      ? "left-7 bg-black"
-                      : "left-1 bg-gray-500",
+                    recurrenceValue.isRecurring ? "left-7 bg-black" : "left-1 bg-gray-500",
                   )}
                 />
               </div>
             </div>
 
-            {/* Frequency Selection */}
-            {formData.isRecurring && (
-              <div className="grid grid-cols-3 gap-2 mt-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                {["daily", "weekly", "monthly"].map((freq) => (
-                  <button
-                    key={freq}
-                    type="button"
-                    onClick={() =>
-                      setFormData({ ...formData, frequency: freq as any })
-                    }
-                    className={cn(
-                      "py-3 rounded-xl text-xs font-bold capitalize transition-all border",
-                      formData.frequency === freq
-                        ? "bg-[#A39171] text-white border-[#A39171]"
-                        : "bg-transparent text-gray-500 border-[#262626]",
-                    )}
-                  >
-                    {freq}
-                  </button>
-                ))}
-              </div>
+            {/* When recurring is on, surface the recurrence summary + a quick
+                edit affordance instead of the old 3-button frequency grid —
+                full editing happens in RecurrencePicker above. */}
+            {recurrenceValue.isRecurring && (
+              <button
+                type="button"
+                onClick={() => setIsRecurrencePickerOpen(true)}
+                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#262626] bg-black animate-in fade-in slide-in-from-top-2 duration-300"
+              >
+                <span className="text-xs text-gray-400">{describeRecurrence(recurrenceValue)}</span>
+                <span className="text-[10px] font-bold text-[#A39171] uppercase tracking-wide">Edit</span>
+              </button>
             )}
 
             {/* Photo Verification */}
             <div
               className={cn(
                 "flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer",
-                formData.requirePhoto
-                  ? "bg-white/3 border-white/10"
-                  : "bg-black border-[#262626]",
+                formData.requirePhoto ? "bg-white/3 border-white/10" : "bg-black border-[#262626]",
               )}
               onClick={() =>
-                !isLoading &&
-                setFormData({
-                  ...formData,
-                  requirePhoto: !formData.requirePhoto,
-                })
+                !isLoading && setFormData({ ...formData, requirePhoto: !formData.requirePhoto })
               }
             >
               <div className="flex items-center gap-4">
@@ -417,9 +445,7 @@ export const TaskActionModal = ({
                   <Camera size={18} className="text-gray-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-white">
-                    Photo Verification
-                  </p>
+                  <p className="text-sm font-bold text-white">Photo Verification</p>
                   <p className="text-xs text-gray-500">Must submit photo</p>
                 </div>
               </div>
@@ -432,9 +458,7 @@ export const TaskActionModal = ({
                 <div
                   className={cn(
                     "absolute top-1 w-4 h-4 rounded-full transition-all duration-300 shadow-sm",
-                    formData.requirePhoto
-                      ? "left-7 bg-black"
-                      : "left-1 bg-gray-500",
+                    formData.requirePhoto ? "left-7 bg-black" : "left-1 bg-gray-500",
                   )}
                 />
               </div>
@@ -456,11 +480,7 @@ export const TaskActionModal = ({
             disabled={isLoading}
             className="flex-1 py-4 bg-white text-black rounded-2xl font-bold hover:bg-gray-200 shadow-lg active:scale-95 transition-all disabled:opacity-50"
           >
-            {isLoading
-              ? "Processing..."
-              : isEditMode
-                ? "Update Task"
-                : "Create Task"}
+            {isLoading ? "Processing..." : isEditMode ? "Update Task" : "Create Task"}
           </button>
         </div>
       </div>

@@ -72,9 +72,15 @@ export interface Task {
   description: string;
   location: number;
   location_name: string;
-  due_date: string;
   is_recurring: boolean;
-  frequency: "none" | "today" | "weekly" | "monthly" | "yearly";
+  frequency: "none" | "daily" | "weekly" | "monthly" | "yearly";
+  recurrence: {
+    frequency: "daily" | "weekly" | "monthly" | "yearly";
+    interval: number;
+    day_of_month: number | null;
+    weekdays: string[] | null;
+  } | null;
+  due_date: string; // Start date for recurring tasks
   requires_photo: boolean;
   created_by: TaskUser;
   created_at: string;
@@ -140,9 +146,15 @@ export interface TaskRequest {
   description: string;
   location: number;
   assigned_to: number[];
-  due_date: string;
   is_recurring: boolean;
   frequency?: "daily" | "weekly" | "monthly" | "yearly" | "none";
+  recurrence?: {
+    interval?: number;
+    unit?: string;
+    days?: number[];
+    day_of_month?: number;
+  };
+  due_date: string; // This is the start date for recurring tasks
   requires_photo?: boolean;
 }
 
@@ -202,7 +214,10 @@ export const taskApi = baseApi.injectEndpoints({
     }),
 
     // PATCH: Edit Task
-    editTask: builder.mutation<Task, { id: number; data: Partial<TaskRequest> }>({
+    editTask: builder.mutation<
+      Task,
+      { id: number; data: Partial<TaskRequest> }
+    >({
       query: ({ id, data }) => ({
         url: `/admin/tasks/${id}/`,
         method: "PATCH",
@@ -233,7 +248,10 @@ export const taskApi = baseApi.injectEndpoints({
         method: "POST",
         body: { assignment_id: assignmentId },
       }),
-      invalidatesTags: (result, error, { taskId }) => ["Tasks", { type: "Tasks", id: taskId }],
+      invalidatesTags: (result, error, { taskId }) => [
+        "Tasks",
+        { type: "Tasks", id: taskId },
+      ],
     }),
 
     // POST: Reject Task (Individual Assignment)
@@ -289,7 +307,7 @@ export const taskApi = baseApi.injectEndpoints({
       TaskListResponse,
       { id: number }
     >({
-      query: ({id}) => ({
+      query: ({ id }) => ({
         url: `/admin/district-manager/tasks/${id}`,
       }),
       providesTags: ["Tasks"],

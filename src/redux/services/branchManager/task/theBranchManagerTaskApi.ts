@@ -142,9 +142,15 @@ export interface CreateBranchManagerTaskRequest {
   title: string;
   description?: string;
   assigned_to: number[];
-  due_date: string;
   is_recurring?: boolean;
   frequency?: "none" | "daily" | "weekly" | "monthly" | "yearly";
+  recurrence?: {
+    interval?: number;
+    unit?: string;
+    days?: number[];
+    day_of_month?: number;
+  };
+  due_date: string; // Start date for recurring tasks
   requires_photo?: boolean;
 }
 
